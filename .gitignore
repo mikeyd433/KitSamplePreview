@@ -5,3 +5,4 @@ target/
 .DS_Store
 **/gen/schemas/
 test-corpus/
+test-corpus/
