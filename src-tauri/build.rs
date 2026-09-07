@@ -41,8 +41,21 @@ fn main() {
     println!("cargo:rustc-env=KITBENCH_REPO_DIR={repo}");
     println!("cargo:rustc-env=KITBENCH_COMMIT={stamp}");
     println!("cargo:rustc-env=KITBENCH_BUILT_AT={built_at}");
-    // Re-stamp when the checked-out commit moves.
+
+    // Re-stamp when the checked-out commit moves -- which is harder to watch
+    // than it looks. `.git/HEAD` holds a *ref name* on a branch, not a commit,
+    // so a pull rewrites the ref file it points at and leaves HEAD untouched.
+    // Watching only HEAD meant the stamp survived every pull and the badge
+    // confidently reported an older commit than the binary actually contained.
     println!("cargo:rerun-if-changed=../.git/HEAD");
+    // Packed refs, for a repo whose branch ref has been packed away.
+    println!("cargo:rerun-if-changed=../.git/packed-refs");
+    if let Ok(head) = std::fs::read_to_string("../.git/HEAD") {
+        if let Some(reference) = head.strip_prefix("ref: ") {
+            // The loose ref file, which is what a pull or a commit rewrites.
+            println!("cargo:rerun-if-changed=../.git/{}", reference.trim());
+        }
+    }
 
     tauri_build::build()
 }
