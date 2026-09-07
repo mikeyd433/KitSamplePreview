@@ -104,12 +104,12 @@ usable. **`Loaded?` is the column that matters** and is filled in by ear.
 
 | file | format | Badge | Loaded? |
 |---|---|---|---|
-| `wav_s24_44k_stereo.wav` | 24-bit PCM, 44.1k, stereo | Dropped | |
-| `wav_f32_ext_96k_stereo.wav` | 32-bit float extensible, 96k, stereo | Dropped | |
-| `wav_s16_8k_mono.wav` | 16-bit PCM, 8k, mono | Dropped | |
-| `wav_u8_44k_mono.wav` | 8-bit unsigned PCM, 44.1k, mono | Dropped | |
-| `aiff_s16_44k_stereo.aiff` | AIFF 16-bit, 44.1k, stereo | Dropped | |
-| `wav_s16_44k_junk_chunks.wav` | 16-bit PCM behind JUNK/LIST/bext chunks | Dropped | |
+| `wav_s24_44k_stereo.wav` | 24-bit PCM, 44.1k, stereo | Dropped | **yes** |
+| `wav_f32_ext_96k_stereo.wav` | 32-bit float extensible, 96k, stereo | Dropped | **yes** |
+| `wav_s16_8k_mono.wav` | 16-bit PCM, 8k, mono | Dropped | **yes** |
+| `wav_u8_44k_mono.wav` | 8-bit unsigned PCM, 44.1k, mono | Dropped | **yes** |
+| `aiff_s16_44k_stereo.aiff` | AIFF 16-bit, 44.1k, stereo | Dropped | **yes** |
+| `wav_s16_44k_junk_chunks.wav` | 16-bit PCM behind JUNK/LIST/bext chunks | Dropped | **yes** |
 
 Whatever Sitala refuses is what §7.8's pre-conversion has to normalise, and it
 sets the ffmpeg defaults for Phase 3. If the float/96k file fails, re-test with
@@ -118,7 +118,27 @@ variables.
 
 **Conclusion for pre-conversion defaults:**
 
-> 
+> **Sitala accepted and played every format tested.** 24-bit, 32-bit float at
+> 96 kHz, 8-bit unsigned, 8 kHz, AIFF, and PCM hidden behind JUNK/LIST/bext
+> chunks all loaded onto a pad and triggered. §11.2 guessed Sitala might reject
+> 32-bit float, non-44.1k rates or stereo; it rejects none of them.
+>
+> **So pre-conversion defaults to off.** SPEC §7.8 assumes a conversion step
+> before the drag and recommends doing it on selection rather than on
+> mouse-down to keep it off the critical path. On this evidence the common case
+> needs no conversion at all: drag the original file untouched. That removes a
+> moving part from the drag path entirely, and removes the reason for the
+> pre-convert-on-selection machinery.
+>
+> **Keep the ffmpeg sidecar anyway, as a fallback, for two reasons.** First,
+> compressed formats were never tested against Sitala — ffmpeg was not on PATH
+> when the corpus was generated, so no MP3/FLAC/OGG existed to drag, and real
+> sample libraries do contain them. They are now the *only* plausible
+> conversion case, which is a much narrower job than §7.8 anticipated. Second,
+> `resolve_playable` needs the same transcode path for preview decode
+> regardless (§8), so the sidecar earns its place either way.
+>
+> **Untested and worth closing later:** MP3, FLAC and OGG against Sitala.
 
 ---
 
@@ -172,7 +192,12 @@ it ran long, that is itself a finding.
 
 Tick one. SPEC §14 defines what each one means for the phases that follow.
 
-- [ ] **All green** → proceed to Phase 1 as specced. Delete the spike.
+- [x] **All green** → proceed to Phase 1 as specced. Delete the spike.
+      Drag-out to a hosted Sitala pad works, reliably, across spaces,
+      non-ASCII, and every audio format tested. Two items remain open but
+      neither blocks Phase 1 or changes the spec: multi-file (row 6) is
+      unproven, and the decode bench has not been run. Row 9's crash is a
+      Phase 3 guard, not a design change.
 - [ ] **Drag works to REAPER but not Sitala** → export-kit-to-folder (SPEC §7.8)
       becomes the primary delivery path and moves from Phase 3 into Phase 1. The
       kit tray gains priority over the inspector. The rest of the spec is
