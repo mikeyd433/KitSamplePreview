@@ -72,7 +72,7 @@ accepted the data object, not that the sample got mapped to the pad.
 | 3 | Path with spaces | `dragstart` | Dropped | yes | worked |
 | 4 | Path with non-ASCII characters | `dragstart` | Dropped | yes | worked — UTF-16 end to end, as the source predicted |
 | 5 | UNC path (`\\NAS\...`) | — | — | — | **not run** — no share available. Recorded as skipped, not as a pass. |
-| 6 | Two files at once | `dragstart` | Dropped | ? | **Inconclusive — needs a re-run.** The same path was entered in both fields, so the `CF_HDROP` carried one file twice. That cannot show whether Sitala fills two pads. §11.3 stays open. 11:07:05. |
+| 6 | Two files at once | `dragstart` | Dropped | ? | Re-run at 11:18:40 with two *distinct* files (`wav_s16_44k_stereo` + `wav_s16_44k_mono`); the drop was accepted. What Sitala did with the pair — two pads, one pad, or ignored — is still unrecorded, so §11.3 remains open. |
 | 7 | → REAPER arrange view (not Sitala) | `dragstart` | Dropped | — | REAPER's arrange view accepted the drop. Confirms the drag source is sound independently of Sitala. 11:07:59. |
 | 8 | → Explorer / a text editor | `dragstart` | Dropped | — | Two attempts, both accepted, at x≈1650–1670 — well outside the spike window, so this one is genuinely an external target. 11:08:19 and 11:08:22. |
 | 9 | Path over 260 chars *(beyond §14)* | `dragstart` | **crashed** | — | **The app process died and the window closed.** 321-char path (325 once `dunce` prefixes `\\?\`). Not a rejection — a panic inside the plugin. Mechanism below. |
@@ -144,25 +144,77 @@ variables.
 
 ## decodeAudioData results
 
-Paste the table from the bench's *copy results as markdown* button.
+Run at 11:19 against the generated corpus. **17 files, every one decoded twice**
+— once through the asset protocol, once from bytes over IPC.
 
-> 
+| file | format | asset | ipc | decoded |
+|---|---|---|---|---|
+| `aifc_sowt_s16_44k_stereo.aifc` | AIFC PCM (sowt), 16-bit, 44.1k, stereo | **refused** | **refused** | — |
+| `aiff_s16_44k_stereo.aiff` | AIFF PCM, 16-bit, 44.1k, stereo | **refused** | **refused** | — |
+| `aiff_s24_44k_mono.aiff` | AIFF PCM, 24-bit, 44.1k, mono | **refused** | **refused** | — |
+| `wav_u8_44k_mono.wav` | 8-bit unsigned PCM | ok | ok | 220 ms, peak 0.495 |
+| `wav_s16_44k_mono.wav` | 16-bit PCM | ok | ok | 220 ms, peak 0.516 |
+| `wav_s16_44k_stereo.wav` | 16-bit PCM, stereo | ok | ok | 260 ms, peak 0.510 |
+| `wav_s16_8k_mono.wav` | 16-bit PCM, 8 kHz | ok | ok | 300 ms, peak 0.504 |
+| `wav_s16_ext_44k_stereo.wav` | EXTENSIBLE (PCM), 16-bit | ok | ok | 220 ms, peak 0.531 |
+| `wav_s16_44k_junk_chunks.wav` | 16-bit PCM behind JUNK/LIST/bext | ok | ok | 220 ms, peak 0.501 |
+| `wav_s24_44k_stereo.wav` | 24-bit PCM | ok | ok | 260 ms, peak 0.512 |
+| `wav_s24_96k_stereo.wav` | 24-bit PCM, 96 kHz | ok | ok | 240 ms, peak 0.481 |
+| `wav_s32_48k_mono.wav` | 32-bit *integer* PCM | ok | ok | 200 ms, peak 0.500 |
+| `wav_f32_48k_mono.wav` | 32-bit float (tag 3) | ok | ok | 200 ms, peak 0.500 |
+| `wav_f32_ext_96k_stereo.wav` | EXTENSIBLE (IEEE float), 96 kHz | ok | ok | 240 ms, peak 0.454 |
+| `broken_header_only.wav` | header, no samples | **refused** | **refused** | clean failure |
+| `broken_truncated.wav` | cut at 200 bytes | ok | ok | 2 ms, peak 0.532 — decodes the fragment it has |
+| `broken_zero_bytes.wav` | empty | **refused** | **refused** | caught before the decoder |
+
+The AudioContext ran at **48 kHz**, so every file was resampled on decode. That
+is why only the two 48 kHz files return exactly 0.500 and everything else lands
+0.481–0.532. Resampler ripple, not a decode fault — and a reminder that the
+buffer's `sampleRate` is the context's, never the file's (SPEC §4 stores the
+real one, so nothing in Phase 1 should read it off the `AudioBuffer`).
 
 Formats WebView2 refused (this is what the ffmpeg transcode fallback in SPEC §8
 has to cover):
 
-> 
+> **AIFF and AIFC, in every variant tested** — 16-bit, 24-bit, mono, stereo,
+> and byte-swapped `sowt`. Nothing else. SPEC §8 predicted "AIFF and exotic WAV
+> chunk layouts are the likely gaps" and got it half right: AIFF is the gap,
+> but exotic WAV layouts are not — `WAVE_FORMAT_EXTENSIBLE` in both PCM and
+> float flavours, and PCM buried behind JUNK/LIST/bext, all decoded without
+> complaint. Every WAV bit depth from 8 to 32, integer and float, at 8 k, 44.1 k
+> and 96 k, decoded.
+>
+> **This inverts SPEC §7.8's assumption about which path needs conversion.**
+> Sitala accepts AIFF (§11.2 above); WebView2 cannot decode it. So the drag-out
+> path needs no conversion and should hand over the original file, while the
+> *preview* path is the one that needs the ffmpeg transcode — the opposite of
+> what §7.8 anticipated. `resolve_playable` (§5, §8) is therefore load-bearing
+> rather than an escape hatch, and its `(path, mtime)`-keyed cache is what keeps
+> an AIFF-heavy folder from re-transcoding on every arrow-key press.
+>
+> **Untested:** MP3, FLAC and OGG. No encoder was available when the corpus was
+> generated. §8 expects Chromium to handle all three, and nothing here casts
+> doubt on that, but it is an assumption rather than a measurement.
 
 Any file that decoded but came back **peak 0.000** — decoded to silence, which is
 a subtler failure than a refusal and worth calling out separately:
 
-> 
+> None. Every file that decoded produced audio at roughly the expected 0.500
+> peak. `broken_truncated.wav` decoded the 2 ms fragment it actually contained
+> rather than failing, which is reasonable behaviour and worth knowing: a
+> truncated file in the library will preview as a click, not an error.
 
 Did anything fail on the `asset` arm but succeed on `ipc`? That is an asset
 protocol scope problem (SPEC §3), not a decoder problem, and it is Phase 1 work
 rather than a §14 finding:
 
-> 
+> **No — the two arms agree on all 17 files, byte for byte identical results.**
+> That is a useful Phase 1 de-risk in its own right: the runtime asset-scope
+> call (`asset_protocol_scope().allow_directory`) on a folder chosen at runtime
+> works, and `convertFileSrc` + `fetch` + `decodeAudioData` is a sound pipeline
+> on WebView2. SPEC §3 warns a scope miss looks exactly like a decode bug and
+> costs an afternoon; that afternoon is now spent, and the answer is that it
+> works.
 
 ---
 
@@ -179,7 +231,7 @@ but REAPER accepts ⇒ Sitala's drop handling. Nothing accepts ⇒ the drag sour
 
 **Which audio formats `decodeAudioData` refused:**
 
-> 
+> AIFF and AIFC only. All WAV variants decoded. MP3/FLAC/OGG untested.
 
 **Did the spike take materially longer than half a day, and why?** SPEC §14: if
 it ran long, that is itself a finding.
