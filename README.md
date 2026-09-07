@@ -48,21 +48,47 @@ src/            React frontend
   keyboard/       the single global key handler
   ipc/            typed wrappers over the Rust commands
 src-tauri/src/  scan (walk, probe, analyse), db, convert, commands
-spike/          Phase 0 throwaway — see below
+scripts/        test-corpus generator
+docs/           Phase 0 results
 ```
 
-## The spike
+## Why the design is what it is
 
-[`spike/`](spike/) answered the one question the whole design rested on: can a
-file be dragged from a Tauri window onto a Sitala pad and be accepted?
-[`spike/RESULTS.md`](spike/RESULTS.md) records that it can, along with several
-findings that changed the plan — most importantly that Sitala accepts every
-audio format tested, so nothing is converted on the way out, and that a path
-over MAX_PATH crashes the drag plugin outright and has to be refused.
+Before any of this was built, a throwaway spike answered the one question the
+whole thing rested on: can a file be dragged from a Tauri window onto a Sitala
+pad and be accepted? It can.
+[`docs/phase-0-results.md`](docs/phase-0-results.md) is that report, and it is
+worth reading before changing anything near the drag or the export paths — it
+records several findings that changed the plan:
 
-It is kept for now because two of its questions are still open: what Sitala
-does with a two-file drop, and whether MP3/FLAC/OGG survive both decoders. It
-can be deleted once those close.
+- **Sitala accepts every audio format tested**, including AIFF and 32-bit float
+  at 96 kHz. So nothing is converted on the way out, and SPEC §7.8's
+  pre-conversion machinery was never built.
+- **WebView2 refuses AIFF**, and nothing else. Conversion is needed for
+  *preview*, not for the drag — the opposite of what the spec assumed.
+- **A path over MAX_PATH crashes the drag plugin outright**, taking the process
+  with it. It has to be refused before the plugin is called; that guard lives
+  in `paths.rs`.
+
+Two of its questions are still open and neither blocks anything: what Sitala
+does with a two-file drop, and whether MP3/FLAC/OGG survive both decoders.
+
+The spike app itself is gone, as SPEC §14 directs.
+
+## Test corpus
+
+```
+npm run corpus
+```
+
+Generates files in awkward formats and paths — every bit depth, integer and
+float, 8 kHz to 96 kHz, AIFF and AIFC, PCM behind metadata chunks, three broken
+files, and paths with spaces, non-ASCII and over-MAX_PATH nesting. Point a
+library root at it to exercise the scanner at its edges.
+
+Not a stand-in for real samples: SPEC §15 is explicit that the app is built and
+judged against a real sample pack. These files are format torture, and their
+value is that their headers are known.
 
 ## Tests
 

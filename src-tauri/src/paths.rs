@@ -137,7 +137,7 @@ pub fn canonicalize(path: &Path) -> String {
 /// `ILCreateFromPathW`, which rejects the verbatim prefix, returns a null
 /// ITEMIDLIST, and takes the process down via an `unwrap` on the resulting
 /// `Option`. That is not theoretical — it crashed the Phase 0 spike (see
-/// `spike/RESULTS.md` row 9).
+/// `docs/phase-0-results.md` row 9).
 pub fn needs_verbatim_prefix(path: &str) -> bool {
     path.len() >= MAX_PATH || path.starts_with(r"\\?\")
 }
