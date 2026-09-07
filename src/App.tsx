@@ -7,6 +7,7 @@ import { SampleTiles } from "./components/SampleTiles";
 import { StatusBar } from "./components/StatusBar";
 import { Inspector } from "./components/Inspector";
 import { CategoryChips } from "./components/CategoryChips";
+import { ScopeBar } from "./components/ScopeBar";
 import { KitTray } from "./components/KitTray";
 import { useGlobalKeyboard } from "./keyboard/useGlobalKeyboard";
 import { useLibrary } from "./stores/library";
@@ -58,6 +59,7 @@ export function App(): React.JSX.Element {
           placeholder="search — try “808 kick”  ( / to focus, Esc to clear )"
           onChange={(e) => setText(e.target.value)}
         />
+        <ScopeBar />
         <CategoryChips />
         <div className="view-toggle" role="group" aria-label="View">
           {(["list", "tiles"] as const).map((mode) => (
@@ -75,7 +77,19 @@ export function App(): React.JSX.Element {
             </button>
           ))}
         </div>
-        <span className="hint">↑↓←→ audition · Space replay · 1234/QWER/ASDF/ZXCV → pad · Enter → next</span>
+        <span
+          className="hint"
+          title={[
+            "↑ ↓ ← →   move the selection, playing each one",
+            "Space     replay",
+            "1234 QWER ASDF ZXCV   assign to that pad",
+            "Enter     assign to the next empty pad",
+            "/         search      Esc  widen",
+            "*         favourite",
+          ].join("\n")}
+        >
+          ↑↓←→ audition · keys
+        </span>
       </header>
 
       <div className="main">

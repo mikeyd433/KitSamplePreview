@@ -62,6 +62,8 @@ pub fn run() {
             commands::export_kit,
             commands::ffmpeg_available,
             commands::app_version,
+            commands::can_update,
+            commands::update_and_restart,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Kitbench");

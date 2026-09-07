@@ -15,15 +15,31 @@
 .PARAMETER NoPull
   Build what is already checked out, without fetching.
 
+.PARAMETER Relaunch
+  Start Kitbench when the build succeeds, and keep this window open if it
+  fails. Used by the app's own "update" button, which has to quit before the
+  build can replace its executable.
+
 .EXAMPLE
   .\scripts\update-kitbench.ps1
 #>
 [CmdletBinding()]
 param(
-    [switch] $NoPull
+    [switch] $NoPull,
+    [switch] $Relaunch
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Launched from the app's update button, this window is the only place an error
+# can be read — so it must not vanish on failure.
+trap {
+    Write-Host ''
+    Write-Host "Update failed: $_" -ForegroundColor Red
+    Write-Host 'Kitbench has not been changed; the Desktop icon still runs the previous build.'
+    if ($Relaunch) { Read-Host 'Press Enter to close' }
+    exit 1
+}
 
 # Resolve the repo from this script's own location, so the shortcut works no
 # matter where it is invoked from.
@@ -52,6 +68,16 @@ if (-not $NoPull) {
     } else {
         Write-Host 'Pulling...' -ForegroundColor Cyan
         git pull --ff-only
+    }
+}
+
+if ($Relaunch) {
+    # The app spawned this and is on its way out. Windows will not let a
+    # running executable be overwritten, so wait for it to actually go.
+    $waited = 0
+    while ((Get-Process -Name 'kitbench' -ErrorAction SilentlyContinue) -and $waited -lt 30) {
+        Start-Sleep -Milliseconds 250
+        $waited++
     }
 }
 
@@ -86,3 +112,8 @@ Write-Host ''
 Write-Host "Built $commit" -ForegroundColor Green
 Write-Host "Shortcut: $linkPath" -ForegroundColor Green
 Write-Host 'The status bar shows the same commit, so you can confirm what is running.'
+
+if ($Relaunch) {
+    Write-Host 'Starting Kitbench...' -ForegroundColor Cyan
+    Start-Process -FilePath $exe -WorkingDirectory (Split-Path -Parent $exe)
+}

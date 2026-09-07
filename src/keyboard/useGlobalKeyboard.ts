@@ -29,7 +29,10 @@ export function useGlobalKeyboard(searchRef: React.RefObject<HTMLInputElement | 
       // Escape works from the search box too: it is how you get back to the
       // list, and §7.2 gives it both jobs — clear the search, then return focus.
       if (e.key === "Escape") {
+        // Widens one step at a time, so Escape always undoes the most recent
+        // narrowing rather than throwing away both at once.
         if (store.text !== "") store.setText("");
+        else if (store.rootId !== null || store.subtree !== null) store.clearScope();
         else searchRef.current?.blur();
         if (typing) searchRef.current?.blur();
         e.preventDefault();

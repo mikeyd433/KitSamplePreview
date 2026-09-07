@@ -29,6 +29,16 @@ fn main() {
         .map(|d| d.as_secs())
         .unwrap_or(0);
 
+    // Where this binary was built from, so the app can find its own update
+    // script. Correct because Kitbench is always built on the machine it runs
+    // on; a binary moved elsewhere simply finds nothing there and hides the
+    // update button.
+    let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default();
+
+    println!("cargo:rustc-env=KITBENCH_REPO_DIR={repo}");
     println!("cargo:rustc-env=KITBENCH_COMMIT={stamp}");
     println!("cargo:rustc-env=KITBENCH_BUILT_AT={built_at}");
     // Re-stamp when the checked-out commit moves.

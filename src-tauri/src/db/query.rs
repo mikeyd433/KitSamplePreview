@@ -290,18 +290,33 @@ pub struct SamplePage {
     pub rows: Vec<SampleRow>,
 }
 
-/// Escapes a user's search term for `LIKE ... ESCAPE '\'`.
-fn like_pattern(term: &str) -> String {
-    let mut out = String::with_capacity(term.len() + 2);
-    out.push('%');
-    for c in term.chars() {
+/// Escapes LIKE's wildcards, and the escape character itself.
+///
+/// `\` is the ESCAPE character in every LIKE below, which matters more than it
+/// looks: paths are stored Windows-shaped, so a literal separator has to be
+/// written `\\` or LIKE reads it as escaping whatever follows. Getting this
+/// wrong made folder filtering match nothing at all.
+fn like_escape(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
         if matches!(c, '%' | '_' | '\\') {
             out.push('\\');
         }
         out.push(c);
     }
-    out.push('%');
     out
+}
+
+/// `%term%` — matches anywhere.
+fn like_pattern(term: &str) -> String {
+    format!("%{}%", like_escape(term))
+}
+
+/// `dir\%` — matches that directory and everything beneath it.
+fn like_subtree(dir: &str) -> String {
+    // The trailing separator is escaped too: it is a literal backslash in the
+    // pattern, not an escape for the `%`.
+    format!("{}\\\\%", like_escape(dir.trim_end_matches('\\')))
 }
 
 /// Builds the shared WHERE clause and its bound parameters.
@@ -319,7 +334,7 @@ fn where_clause(q: &SampleQuery) -> (String, Vec<Box<dyn rusqlite::ToSql>>) {
     if let Some(subtree) = q.subtree.as_deref().filter(|s| !s.is_empty()) {
         // Prefix match on the relative path, with the separator appended so
         // that "Kicks" does not also match "Kicks Extra".
-        binds.push(Box::new(format!("{}\\%", subtree.trim_end_matches('\\'))));
+        binds.push(Box::new(like_subtree(subtree)));
         clauses.push(format!("s.rel_path LIKE ?{} ESCAPE '\\'", binds.len()));
     }
     if let Some(text) = q.text.as_deref() {
@@ -520,4 +535,130 @@ pub fn set_setting(conn: &Connection, key: &str, value: &str) -> Result<(), DbEr
         params![key, value],
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db;
+
+    /// Builds an index shaped like a real drum-kit pack: numbered top-level
+    /// folders, nested subfolders, spaces and punctuation in names.
+    fn fixture() -> Connection {
+        let conn = db::open_in_memory().unwrap();
+        conn.execute(
+            "INSERT INTO library_root (id, path, label, added_at)
+             VALUES (1, 'C:\\Packs\\Trap', 'Trap', 0)",
+            [],
+        )
+        .unwrap();
+
+        let rows = [
+            (1, r"1. KICK\kick_01.wav", r"1. KICK"),
+            (2, r"1. KICK\kick_02.wav", r"1. KICK"),
+            (3, r"1. KICK\-Kick Textures\texture_01.wav", r"1. KICK\-Kick Textures"),
+            (4, r"2. SNARE\snare_01.wav", r"2. SNARE"),
+            (5, r"2. SNARE\- Secondary Snares\snare_alt.wav", r"2. SNARE\- Secondary Snares"),
+            (6, r"10. TRANSITIONS\riser.wav", r"10. TRANSITIONS"),
+        ];
+        for (id, rel, parent) in rows {
+            let filename = crate::paths::file_name(rel);
+            conn.execute(
+                "INSERT INTO sample (id, root_id, path, rel_path, filename, parent_dir, ext,
+                                     size_bytes, mtime, search_text, scanned_at)
+                 VALUES (?1, 1, ?2, ?3, ?4, ?5, 'wav', 10, 0, ?6, 0)",
+                rusqlite::params![
+                    id,
+                    format!(r"C:\Packs\Trap\{rel}"),
+                    rel,
+                    filename,
+                    parent,
+                    crate::search::search_text(rel),
+                ],
+            )
+            .unwrap();
+        }
+        conn
+    }
+
+    fn ids(conn: &Connection, q: &SampleQuery) -> Vec<i64> {
+        let mut got: Vec<i64> = list_samples(conn, q).unwrap().rows.iter().map(|r| r.id).collect();
+        got.sort_unstable();
+        got
+    }
+
+    /// The bug this test exists for: `\` is LIKE's ESCAPE character here, and
+    /// paths are stored Windows-shaped, so an unescaped separator made the
+    /// pattern read as an escaped literal `%` and matched nothing at all.
+    /// Clicking any folder in the tree showed an empty list.
+    #[test]
+    fn filtering_by_folder_returns_that_folder_and_its_children() {
+        let conn = fixture();
+        let scoped = |dir: &str| SampleQuery { subtree: Some(dir.into()), ..Default::default() };
+
+        assert_eq!(ids(&conn, &scoped(r"1. KICK")), vec![1, 2, 3]);
+        assert_eq!(ids(&conn, &scoped(r"1. KICK\-Kick Textures")), vec![3]);
+        assert_eq!(ids(&conn, &scoped(r"2. SNARE")), vec![4, 5]);
+        // A numeric prefix must not match by coincidence: "1. KICK" and
+        // "10. TRANSITIONS" both begin with "1".
+        assert_eq!(ids(&conn, &scoped(r"10. TRANSITIONS")), vec![6]);
+    }
+
+    #[test]
+    fn a_trailing_separator_does_not_change_the_result() {
+        // The tree and the store can each produce either spelling.
+        let conn = fixture();
+        let with = SampleQuery { subtree: Some(r"1. KICK\".into()), ..Default::default() };
+        let without = SampleQuery { subtree: Some(r"1. KICK".into()), ..Default::default() };
+        assert_eq!(ids(&conn, &with), ids(&conn, &without));
+    }
+
+    #[test]
+    fn wildcards_in_a_search_term_are_matched_literally() {
+        // Otherwise typing "%" quietly matches the whole library, and "_"
+        // matches any character — both of which read as the search being broken.
+        let conn = fixture();
+        let text = |t: &str| SampleQuery { text: Some(t.into()), ..Default::default() };
+        assert!(ids(&conn, &text("%")).is_empty());
+        assert!(ids(&conn, &text("kick_0")).is_empty(), "underscore must not be a wildcard");
+        // A positive control, so the assertions above cannot pass by matching
+        // nothing for some unrelated reason. Both rows live under "1. KICK",
+        // and the folder is part of the search text, so both are correct hits.
+        assert_eq!(ids(&conn, &text("kick 01")), vec![1, 3]);
+        assert_eq!(ids(&conn, &text("texture")), vec![3]);
+    }
+
+    #[test]
+    fn search_terms_are_anded_in_any_order() {
+        let conn = fixture();
+        let text = |t: &str| SampleQuery { text: Some(t.into()), ..Default::default() };
+        assert_eq!(ids(&conn, &text("kick texture")), vec![3]);
+        assert_eq!(ids(&conn, &text("texture kick")), vec![3]);
+        // Both terms must be present, not either.
+        assert!(ids(&conn, &text("kick riser")).is_empty());
+    }
+
+    #[test]
+    fn scoping_and_searching_compose() {
+        // What the scope bar reports on: the same search, narrowed.
+        let conn = fixture();
+        let everywhere = SampleQuery { text: Some("01".into()), ..Default::default() };
+        let scoped = SampleQuery {
+            text: Some("01".into()),
+            subtree: Some(r"1. KICK".into()),
+            ..Default::default()
+        };
+        assert_eq!(ids(&conn, &everywhere), vec![1, 3, 4]);
+        assert_eq!(ids(&conn, &scoped), vec![1, 3]);
+    }
+
+    #[test]
+    fn the_total_ignores_pagination() {
+        // The scope bar counts with `limit: 0`, so a limit must not change the
+        // reported total or the count is meaningless.
+        let conn = fixture();
+        let page = list_samples(&conn, &SampleQuery { limit: Some(0), ..Default::default() }).unwrap();
+        assert_eq!(page.total, 6);
+        assert!(page.rows.is_empty());
+    }
 }

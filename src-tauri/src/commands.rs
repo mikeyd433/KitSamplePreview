@@ -254,6 +254,63 @@ pub fn app_version() -> AppVersion {
     }
 }
 
+/// The update script this build was made from, if it is still there.
+fn update_script() -> Option<std::path::PathBuf> {
+    let repo = env!("KITBENCH_REPO_DIR");
+    if repo.is_empty() {
+        return None;
+    }
+    let script = std::path::Path::new(repo).join("scripts").join("update-kitbench.ps1");
+    script.is_file().then_some(script)
+}
+
+/// Whether in-app updating is possible from this build.
+#[tauri::command]
+pub fn can_update() -> bool {
+    cfg!(windows) && update_script().is_some()
+}
+
+/// Rebuilds from the latest commit and relaunches.
+///
+/// Necessarily a hand-off rather than an in-place update: Windows will not let
+/// a running executable be overwritten, so the app cannot rebuild itself. It
+/// starts the same PowerShell script the Desktop shortcut was made by, in its
+/// own console window so a multi-minute build is visible rather than looking
+/// like a hang, and then quits so the build can replace the binary. The script
+/// relaunches when it finishes.
+///
+/// If the build fails the app simply does not come back, and the old binary is
+/// still on disk — the Desktop icon still works. The console stays open with
+/// the error.
+#[tauri::command]
+pub fn update_and_restart(app: AppHandle) -> CmdResult<()> {
+    let script = update_script()
+        .ok_or("this build has no update script beside it — use the Desktop shortcut")?;
+
+    let mut cmd = std::process::Command::new("powershell");
+    cmd.arg("-NoProfile")
+        .arg("-ExecutionPolicy")
+        .arg("Bypass")
+        .arg("-File")
+        .arg(&script)
+        .arg("-Relaunch");
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // Its own console: the build takes minutes and needs to be watchable.
+        const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
+        cmd.creation_flags(CREATE_NEW_CONSOLE);
+    }
+
+    cmd.spawn().map_err(|e| format!("could not start the updater: {e}"))?;
+
+    // Quit only once the updater is actually running, so a failure to launch
+    // leaves the app open with an error rather than closing into nothing.
+    app.exit(0);
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Kits (SPEC §7.7)
 // ---------------------------------------------------------------------------

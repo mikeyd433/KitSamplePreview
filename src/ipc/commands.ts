@@ -204,6 +204,10 @@ export interface AppVersion {
 
 export const appVersion = (): Promise<AppVersion> => invoke<AppVersion>("app_version");
 
+export const canUpdate = (): Promise<boolean> => invoke<boolean>("can_update");
+
+export const updateAndRestart = (): Promise<void> => invoke<void>("update_and_restart");
+
 export type ViewMode = "list" | "tiles";
 
 export interface Settings {

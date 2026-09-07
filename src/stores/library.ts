@@ -37,6 +37,15 @@ interface LibraryState {
   folders: FolderNode[];
   rows: SampleRow[];
   total: number;
+  /**
+   * What the same search would return across the whole library, when the view
+   * is scoped to a root or folder. Null when nothing is scoped.
+   *
+   * This is what turns "12 results" from a dead end into a signpost: the
+   * matches you cannot see are the reason a scoped search feels like the tool
+   * is missing things.
+   */
+  globalTotal: number | null;
   loading: boolean;
 
   rootId: number | null;
@@ -87,6 +96,7 @@ interface LibraryState {
   setText: (text: string) => void;
   setRoot: (rootId: number | null) => void;
   setSubtree: (subtree: string | null) => void;
+  clearScope: () => void;
   runQuery: () => Promise<void>;
 
   select: (index: number, options?: { preview?: boolean }) => void;
@@ -99,6 +109,7 @@ export const useLibrary = create<LibraryState>((set, get) => ({
   folders: [],
   rows: [],
   total: 0,
+  globalTotal: null,
   loading: false,
 
   rootId: null,
@@ -280,18 +291,32 @@ export const useLibrary = create<LibraryState>((set, get) => ({
     void get().runQuery();
   },
 
+  clearScope: () => {
+    set({ rootId: null, subtree: null });
+    void get().refreshRoots();
+    void get().runQuery();
+  },
+
   runQuery: async () => {
     const { rootId, subtree, text } = get();
     set({ loading: true });
     try {
       const { category, tagFilter } = get();
-      const page = await ipc.listSamples({
-        rootId,
-        subtree,
+      const filters = {
         text: text.trim() === "" ? null : text,
         category,
         tags: tagFilter,
-      });
+      };
+      const page = await ipc.listSamples({ rootId, subtree, ...filters });
+
+      // When scoped, ask what the same filters would match everywhere. Cheap
+      // enough to do on every query — `limit: 0` returns the count without the
+      // rows — and it is the difference between "there are 12" and "there are
+      // 12 here, and 47 you are not being shown".
+      const scoped = rootId !== null || subtree !== null;
+      const globalTotal = scoped
+        ? (await ipc.listSamples({ ...filters, limit: 0 })).total
+        : null;
       // Keep the selection where it is if the row is still present, so typing
       // a search term that narrows the list does not throw away the user's place.
       const previous = get().rows[get().selectedIndex]?.id;
@@ -299,6 +324,7 @@ export const useLibrary = create<LibraryState>((set, get) => ({
       set({
         rows: page.rows,
         total: page.total,
+        globalTotal,
         loading: false,
         error: null,
         selectedIndex: nextIndex,

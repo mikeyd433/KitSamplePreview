@@ -55,8 +55,12 @@ export function RootsPanel(): React.JSX.Element {
           <button
             className={`root${rootId === null ? " active" : ""}`}
             onClick={() => setRoot(null)}
+            title="Search every root and every folder"
           >
             All roots
+            <span className="count">
+              {roots.reduce((sum, root) => sum + root.sampleCount, 0)}
+            </span>
           </button>
         </li>
         {roots.map((root) => (

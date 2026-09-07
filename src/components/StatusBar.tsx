@@ -47,6 +47,7 @@ export function StatusBar(): React.JSX.Element {
 
       <div className="status-right">
         <VersionBadge />
+        <UpdateButton />
         <button onClick={() => void rescan(false)} disabled={scan.running || roots.length === 0}>
           rescan
         </button>
@@ -106,6 +107,48 @@ function VersionBadge(): React.JSX.Element | null {
       }
     >
       {copied ? "copied" : label}
+    </button>
+  );
+}
+
+
+/**
+ * Rebuild from the latest commit and come back.
+ *
+ * Not a silent update, and the confirm says so: Windows will not overwrite a
+ * running executable, so the app has to quit, hand off to a console that builds
+ * for a few minutes, and be relaunched by it. Hiding that would make a normal
+ * multi-minute build look like a crash.
+ */
+function UpdateButton(): React.JSX.Element | null {
+  const [available, setAvailable] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    ipc.canUpdate().then(setAvailable).catch(() => setAvailable(false));
+  }, []);
+
+  if (!available) return null;
+
+  const start = (): void => {
+    const ok = window.confirm(
+      "Update Kitbench?\n\n" +
+        "This closes the app and opens a console window to pull and rebuild — " +
+        "a few minutes. Kitbench reopens when it finishes.\n\n" +
+        "If the build fails, nothing changes and the Desktop icon still runs " +
+        "this version.",
+    );
+    if (!ok) return;
+    ipc.updateAndRestart().catch((e: unknown) => setError(ipc.errorText(e)));
+  };
+
+  return (
+    <button
+      className="update-btn"
+      onClick={start}
+      title="Pull the latest commit, rebuild, and restart"
+    >
+      {error === null ? "update" : "update failed"}
     </button>
   );
 }
