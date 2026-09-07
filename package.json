@@ -9,6 +9,7 @@
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "corpus": "node scripts/make-test-corpus.mjs",
+    "release": "tauri build",
     "tauri": "tauri",
     "start": "tauri dev"
   },

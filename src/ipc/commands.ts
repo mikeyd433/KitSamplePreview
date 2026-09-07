@@ -194,6 +194,16 @@ export const exportKit = (
 
 export const ffmpegAvailable = (): Promise<boolean> => invoke<boolean>("ffmpeg_available");
 
+export interface AppVersion {
+  version: string;
+  /** Short commit; a trailing "+" means the tree was dirty at build time. */
+  commit: string;
+  /** Unix seconds. */
+  builtAt: number;
+}
+
+export const appVersion = (): Promise<AppVersion> => invoke<AppVersion>("app_version");
+
 export type ViewMode = "list" | "tiles";
 
 export interface Settings {

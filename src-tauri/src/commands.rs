@@ -227,6 +227,33 @@ pub fn resolve_playable(state: State<'_, AppState>, id: i64) -> CmdResult<Playab
 // Tags and settings
 // ---------------------------------------------------------------------------
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppVersion {
+    pub version: String,
+    /// Short commit this binary was built from; a trailing "+" means the
+    /// working tree was dirty.
+    pub commit: String,
+    pub built_at: i64,
+}
+
+/// What is actually running.
+///
+/// Not in SPEC §5's surface. It earns a command because the app is updated by
+/// rebuilding from a branch, which makes "is this the latest?" a real question
+/// with no other way to answer it — and a stale build that looks current is the
+/// kind of thing that costs an hour before anyone suspects it.
+#[tauri::command]
+pub fn app_version() -> AppVersion {
+    AppVersion {
+        // Cargo.toml is the single source of truth for the version;
+        // tauri.conf.json inherits it rather than repeating it.
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        commit: env!("KITBENCH_COMMIT").to_string(),
+        built_at: env!("KITBENCH_BUILT_AT").parse().unwrap_or(0),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Kits (SPEC §7.7)
 // ---------------------------------------------------------------------------

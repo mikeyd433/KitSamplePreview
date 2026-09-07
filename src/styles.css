@@ -420,3 +420,13 @@ button:disabled { opacity: 0.4; cursor: default; }
 .skipped { margin: 6px 0 0; padding-left: 16px; color: var(--warn); }
 
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+
+/* --- version badge --- */
+
+.version {
+  font-size: 10.5px; color: var(--dim); border-color: transparent;
+  background: none; font-variant-numeric: tabular-nums; padding: 3px 6px;
+}
+.version:hover { border-color: var(--line); color: var(--text); }
+/* Built from a dirty tree: the commit alone does not describe what is running. */
+.version.dirty { color: var(--warn); }

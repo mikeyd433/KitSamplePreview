@@ -1,4 +1,7 @@
+import { useEffect, useState } from "react";
+
 import { useLibrary } from "../stores/library";
+import * as ipc from "../ipc/commands";
 
 /** Scan progress, the last scan's report, and anything that went wrong. */
 export function StatusBar(): React.JSX.Element {
@@ -43,6 +46,7 @@ export function StatusBar(): React.JSX.Element {
       </div>
 
       <div className="status-right">
+        <VersionBadge />
         <button onClick={() => void rescan(false)} disabled={scan.running || roots.length === 0}>
           rescan
         </button>
@@ -55,5 +59,53 @@ export function StatusBar(): React.JSX.Element {
         </button>
       </div>
     </footer>
+  );
+}
+
+
+/**
+ * Which build is running.
+ *
+ * The app is updated by rebuilding from a branch, so "am I on the latest?" has
+ * no other answer — and a stale build that looks current is expensive to
+ * suspect. The commit is the part that actually distinguishes two builds; the
+ * version number rarely moves.
+ */
+function VersionBadge(): React.JSX.Element | null {
+  const [info, setInfo] = useState<ipc.AppVersion | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    ipc.appVersion().then(setInfo).catch(() => undefined);
+  }, []);
+
+  if (info === null) return null;
+
+  const built = new Date(info.builtAt * 1000);
+  const dirty = info.commit.endsWith("+");
+  const label = `v${info.version} · ${info.commit}`;
+
+  const copy = (): void => {
+    void navigator.clipboard
+      .writeText(`${label} (built ${built.toISOString()})`)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1200);
+      })
+      .catch(() => undefined);
+  };
+
+  return (
+    <button
+      className={`version${dirty ? " dirty" : ""}`}
+      onClick={copy}
+      title={
+        `Built ${built.toLocaleString()}` +
+        (dirty ? "\nfrom a working tree with uncommitted changes" : "") +
+        "\nClick to copy"
+      }
+    >
+      {copied ? "copied" : label}
+    </button>
   );
 }

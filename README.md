@@ -16,6 +16,26 @@ npm install
 npm start
 ```
 
+That is the development loop — it needs a terminal and rebuilds as you edit.
+
+### A desktop icon
+
+```powershell
+.\scripts\update-kitbench.ps1
+```
+
+Pulls, builds a release binary, and puts a **Kitbench** shortcut on your
+Desktop pointing at it. Launching from the icon after that is instant.
+
+Updating is deliberately a separate step from launching: a release build takes
+minutes, and an icon that rebuilt on every double-click would be unusable. Run
+the script again whenever you want the latest.
+
+The status bar shows the version and the commit the running binary was built
+from, so "am I on the latest?" is answerable by looking. A trailing `+` means it
+was built from a working tree with uncommitted changes, and an amber badge says
+the same thing more loudly.
+
 Add a library root, and it scans. Then:
 
 | key | |
