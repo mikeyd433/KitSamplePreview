@@ -4,6 +4,7 @@ import { useLibrary } from "../stores/library";
 import type { SampleRow } from "../ipc/commands";
 import { formatDuration, formatRate, rowFault } from "./format";
 import { Waveform } from "./Waveform";
+import { dragOut } from "../ipc/drag";
 
 /**
  * Virtualized from day one (SPEC §13): retrofitting virtualization into a
@@ -117,6 +118,13 @@ function Row({ row, selected, error, onSelect }: RowProps): React.JSX.Element {
     <div
       className={`row${selected ? " row-selected" : ""}${broken ? " row-broken" : ""}${row.removed ? " row-removed" : ""}`}
       style={{ height: ROW_HEIGHT }}
+      draggable={!row.removed && row.dragBlocked === null}
+      onDragStart={(e) => {
+        // Hand the file to the OS rather than letting the webview drag it
+        // (SPEC §7.8). Nothing is awaited here — the gesture would be lost.
+        e.preventDefault();
+        dragOut([row.path], row.dragBlocked);
+      }}
       onMouseDown={onSelect}
       title={title}
     >

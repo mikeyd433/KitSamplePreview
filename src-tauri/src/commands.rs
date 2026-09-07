@@ -10,6 +10,7 @@ use rusqlite::Connection;
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
 
+use crate::convert;
 use crate::db;
 use crate::paths;
 use crate::scan;
@@ -225,6 +226,76 @@ pub fn resolve_playable(state: State<'_, AppState>, id: i64) -> CmdResult<Playab
 // ---------------------------------------------------------------------------
 // Tags and settings
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Kits (SPEC §7.7)
+// ---------------------------------------------------------------------------
+//
+// SPEC §5 does not name these. §15 says a new command probably belongs as a
+// parameter on an existing one — but a kit is not a filter over samples, and
+// save/load/delete are three genuinely different verbs.
+
+#[tauri::command]
+pub fn list_kits(state: State<'_, AppState>) -> CmdResult<Vec<db::KitSummary>> {
+    let conn = state.db.lock().map_err(to_msg)?;
+    db::list_kits(&conn).map_err(to_msg)
+}
+
+#[tauri::command]
+pub fn save_kit(
+    state: State<'_, AppState>,
+    name: String,
+    slots: Vec<db::KitSlot>,
+) -> CmdResult<i64> {
+    let name = name.trim().to_string();
+    if name.is_empty() {
+        return Err("a kit needs a name".into());
+    }
+    let mut conn = state.db.lock().map_err(to_msg)?;
+    db::save_kit(&mut conn, &name, &slots).map_err(to_msg)
+}
+
+#[tauri::command]
+pub fn load_kit(state: State<'_, AppState>, id: i64) -> CmdResult<Option<db::KitDetail>> {
+    let conn = state.db.lock().map_err(to_msg)?;
+    db::load_kit(&conn, id).map_err(to_msg)
+}
+
+#[tauri::command]
+pub fn delete_kit(state: State<'_, AppState>, id: i64) -> CmdResult<()> {
+    let conn = state.db.lock().map_err(to_msg)?;
+    db::delete_kit(&conn, id).map_err(to_msg)
+}
+
+// ---------------------------------------------------------------------------
+// Export (SPEC §7.8)
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn export_kit(
+    state: State<'_, AppState>,
+    kit_id: i64,
+    dest_dir: String,
+    options: convert::ExportOptions,
+) -> CmdResult<convert::ExportReport> {
+    let conn = state.db.lock().map_err(to_msg)?;
+    let override_path = db::get_setting(&conn, "export.ffmpegPath").map_err(to_msg)?;
+    convert::export_kit(&conn, kit_id, &dest_dir, &options, override_path.as_deref())
+        .map_err(to_msg)
+}
+
+/// Whether format conversion is available.
+///
+/// The export dialog asks up front rather than letting the user pick a sample
+/// rate, press go, and only then discover the sidecar is missing. With every
+/// option left as-is the export is a copy and needs no ffmpeg at all — which,
+/// after Phase 0, is the normal case.
+#[tauri::command]
+pub fn ffmpeg_available(state: State<'_, AppState>) -> CmdResult<bool> {
+    let conn = state.db.lock().map_err(to_msg)?;
+    let override_path = db::get_setting(&conn, "export.ffmpegPath").map_err(to_msg)?;
+    Ok(convert::find_sidecar(override_path.as_deref()).is_some())
+}
 
 #[tauri::command]
 pub fn set_tags(state: State<'_, AppState>, sample_id: i64, tags: Vec<String>) -> CmdResult<()> {

@@ -4,6 +4,7 @@ import { useLibrary } from "../stores/library";
 import type { SampleRow } from "../ipc/commands";
 import { formatChannels, formatDuration, formatRate, rowFault } from "./format";
 import { Waveform } from "./Waveform";
+import { dragOut } from "../ipc/drag";
 
 /**
  * Tile view: the same rows, laid out as a grid.
@@ -130,6 +131,11 @@ function Tile({ row, selected, fault, onSelect }: TileProps): React.JSX.Element 
     <div
       className={`tile${selected ? " tile-selected" : ""}${fault !== null ? " tile-broken" : ""}${row.removed ? " tile-removed" : ""}`}
       style={{ height: TILE_HEIGHT }}
+      draggable={!row.removed && row.dragBlocked === null}
+      onDragStart={(e) => {
+        e.preventDefault();
+        dragOut([row.path], row.dragBlocked);
+      }}
       onMouseDown={onSelect}
       title={fault ?? row.relPath}
     >

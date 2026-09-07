@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Kitbench: asset protocol for webview audio decode (SPEC §8).",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "drag:default"]
 }

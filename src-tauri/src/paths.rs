@@ -139,8 +139,26 @@ pub fn canonicalize(path: &Path) -> String {
 /// `Option`. That is not theoretical — it crashed the Phase 0 spike (see
 /// `spike/RESULTS.md` row 9).
 pub fn needs_verbatim_prefix(path: &str) -> bool {
-    path.len() >= 260 || path.starts_with(r"\\?\")
+    path.len() >= MAX_PATH || path.starts_with(r"\\?\")
 }
+
+/// Why `path` must not be handed to the drag plugin, or `None` when it is safe.
+///
+/// This is the Phase 0 row 9 finding turned into a guard. It is not a
+/// nice-to-have: without it the app does not report an error, it dies.
+pub fn drag_block_reason(path: &str) -> Option<String> {
+    if needs_verbatim_prefix(path) {
+        return Some(format!(
+            "path is {} characters, over the {MAX_PATH} limit. Dragging it would crash the \
+             drag plugin rather than fail — export this kit to a folder instead.",
+            path.chars().count(),
+        ));
+    }
+    None
+}
+
+/// Windows' classic path ceiling.
+const MAX_PATH: usize = 260;
 
 /// The spelling to hand to a filesystem call.
 ///
@@ -329,6 +347,17 @@ mod tests {
                 r"C:\Samples\kick.wav"
             );
         }
+    }
+
+    #[test]
+    fn over_max_path_is_blocked_from_dragging() {
+        // Phase 0 row 9: this exact case killed the spike's process. The guard
+        // has to fire before the plugin is called, not after.
+        let long = format!(r"C:\{}\kick.wav", "nested_folder_x".repeat(20));
+        let reason = drag_block_reason(&long).expect("long path must be blocked");
+        assert!(reason.contains("crash"), "the reason should say why: {reason}");
+        assert!(drag_block_reason(r"C:\Samples\kick.wav").is_none());
+        assert!(drag_block_reason(r"\\NAS\samples\kick.wav").is_none());
     }
 
     #[test]

@@ -99,6 +99,14 @@ pub struct SampleRow {
     pub body_rms_db: Option<f32>,
     /// 400 min/max `i8` pairs, base64. Null until analysed.
     pub peaks: Option<String>,
+    /// Why this file must not be dragged, or null when it is safe.
+    ///
+    /// Phase 0 row 9: a path over MAX_PATH canonicalizes to a `\\?\` verbatim
+    /// form that the shell namespace parser rejects, so `ILCreateFromPathW`
+    /// returns a null ITEMIDLIST and drag-rs unwraps it — panicking on the main
+    /// thread and killing the app, with nothing reaching the drag callback.
+    /// Carried on the row so a drag handler never has to ask.
+    pub drag_blocked: Option<String>,
     pub removed: bool,
     /// Why the file could not be probed. A row with this set still appears in
     /// the list — a broken file the user cannot see is a file they cannot fix.
@@ -106,10 +114,11 @@ pub struct SampleRow {
 }
 
 fn sample_row_from(row: &Row<'_>) -> rusqlite::Result<SampleRow> {
+    let path: String = row.get(2)?;
     Ok(SampleRow {
         id: row.get(0)?,
         root_id: row.get(1)?,
-        path: row.get(2)?,
+        path: path.clone(),
         rel_path: row.get(3)?,
         filename: row.get(4)?,
         parent_dir: row.get(5)?,
@@ -125,6 +134,7 @@ fn sample_row_from(row: &Row<'_>) -> rusqlite::Result<SampleRow> {
         peaks: row
             .get::<_, Option<Vec<u8>>>(15)?
             .map(|blob| BASE64.encode(blob)),
+        drag_blocked: crate::paths::drag_block_reason(&path),
         removed: row.get::<_, Option<i64>>(16)?.is_some(),
         probe_error: row.get(17)?,
     })

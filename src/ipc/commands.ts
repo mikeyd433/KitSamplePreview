@@ -34,6 +34,8 @@ export interface SampleRow {
   bodyRmsDb: number | null;
   /** 400 min/max i8 pairs, base64. Null until analysed. */
   peaks: string | null;
+  /** Why this file must not be dragged, or null when it is safe. */
+  dragBlocked: string | null;
   removed: boolean;
   /** Why the scan could not read this file. Null for healthy rows. */
   probeError: string | null;
@@ -122,6 +124,75 @@ export const setTags = (sampleId: number, tags: string[]): Promise<void> =>
   invoke<void>("set_tags", { sampleId, tags });
 
 export const listTags = (): Promise<TagCount[]> => invoke<TagCount[]>("list_tags");
+
+export interface KitSummary {
+  id: number;
+  name: string;
+  createdAt: number;
+  updatedAt: number;
+  filled: number;
+}
+
+export interface KitSlot {
+  slotIndex: number;
+  sampleId: number | null;
+  gainDbOffset: number;
+  notes: string | null;
+}
+
+export interface KitSlotDetail extends KitSlot {
+  sample: SampleRow | null;
+}
+
+export interface KitDetail {
+  id: number;
+  name: string;
+  slots: KitSlotDetail[];
+}
+
+export interface ExportOptions {
+  sampleRate?: number | null;
+  bitDepth?: number | null;
+  channels?: number | null;
+  applySlotGain?: boolean;
+  normalize?: boolean;
+  normalizeTargetDb?: number | null;
+}
+
+export interface ExportedFile {
+  slotIndex: number;
+  path: string;
+  converted: boolean;
+}
+
+export interface SkippedSlot {
+  slotIndex: number;
+  reason: string;
+}
+
+export interface ExportReport {
+  destDir: string;
+  written: ExportedFile[];
+  skipped: SkippedSlot[];
+}
+
+export const listKits = (): Promise<KitSummary[]> => invoke<KitSummary[]>("list_kits");
+
+export const saveKit = (name: string, slots: KitSlot[]): Promise<number> =>
+  invoke<number>("save_kit", { name, slots });
+
+export const loadKit = (id: number): Promise<KitDetail | null> =>
+  invoke<KitDetail | null>("load_kit", { id });
+
+export const deleteKit = (id: number): Promise<void> => invoke<void>("delete_kit", { id });
+
+export const exportKit = (
+  kitId: number,
+  destDir: string,
+  options: ExportOptions,
+): Promise<ExportReport> => invoke<ExportReport>("export_kit", { kitId, destDir, options });
+
+export const ffmpegAvailable = (): Promise<boolean> => invoke<boolean>("ffmpeg_available");
 
 export type ViewMode = "list" | "tiles";
 

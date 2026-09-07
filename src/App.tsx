@@ -7,6 +7,7 @@ import { SampleTiles } from "./components/SampleTiles";
 import { StatusBar } from "./components/StatusBar";
 import { Inspector } from "./components/Inspector";
 import { CategoryChips } from "./components/CategoryChips";
+import { KitTray } from "./components/KitTray";
 import { useGlobalKeyboard } from "./keyboard/useGlobalKeyboard";
 import { useLibrary } from "./stores/library";
 import { unlock } from "./audio/engine";
@@ -74,7 +75,7 @@ export function App(): React.JSX.Element {
             </button>
           ))}
         </div>
-        <span className="hint">↑↓←→ audition · Space replay · * favourite</span>
+        <span className="hint">↑↓←→ audition · Space replay · 1234/QWER/ASDF/ZXCV → pad · Enter → next</span>
       </header>
 
       <div className="main">
@@ -83,6 +84,7 @@ export function App(): React.JSX.Element {
         <Inspector />
       </div>
 
+      <KitTray />
       <StatusBar />
     </div>
   );

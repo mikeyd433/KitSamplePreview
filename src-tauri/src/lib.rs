@@ -5,6 +5,7 @@
 //! auto-preview-on-selection.
 
 pub mod commands;
+pub mod convert;
 pub mod db;
 pub mod paths;
 pub mod scan;
@@ -15,6 +16,10 @@ use tauri::Manager;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // SPEC §7.8's drag-out. The JS side calls the plugin directly from a
+        // real mouse event; see the note in the frontend's drag module for why
+        // it is not wrapped in a command of our own.
+        .plugin(tauri_plugin_drag::init())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             let conn = db::open(&data_dir.join("kitbench.sqlite3"))?;
@@ -50,6 +55,12 @@ pub fn run() {
             commands::list_tags,
             commands::get_settings,
             commands::set_setting,
+            commands::list_kits,
+            commands::save_kit,
+            commands::load_kit,
+            commands::delete_kit,
+            commands::export_kit,
+            commands::ffmpeg_available,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Kitbench");

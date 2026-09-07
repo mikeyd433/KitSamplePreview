@@ -1,11 +1,13 @@
 //! SQLite index (SPEC §4).
 
+pub mod kit;
 pub mod query;
 
 use std::path::Path;
 
 use rusqlite::Connection;
 
+pub use kit::*;
 pub use query::*;
 
 #[derive(Debug, thiserror::Error)]

@@ -9,6 +9,8 @@
 import { useEffect } from "react";
 
 import { useLibrary } from "../stores/library";
+import { useKit } from "../stores/kit";
+import { SLOT_KEYS } from "../components/KitTray";
 import { unlock } from "../audio/engine";
 
 /** True when the event came from somewhere that legitimately wants the key. */
@@ -49,7 +51,28 @@ export function useGlobalKeyboard(searchRef: React.RefObject<HTMLInputElement | 
       // that diverge.
       const step = store.viewMode === "tiles" ? Math.max(1, store.columns) : 1;
 
+      // The 4x4 slot block (SPEC §7.2). These deliberately shadow letter keys,
+      // which is safe only because the `typing` guard above has already
+      // returned for anything focused on an input — the spec is explicit that
+      // slot assignment is live only when the list has focus.
+      if (!e.ctrlKey && !e.altKey && !e.metaKey) {
+        const slot = SLOT_KEYS.indexOf(e.key.toLowerCase());
+        if (slot !== -1) {
+          const row = store.rows[store.selectedIndex];
+          if (row !== undefined) useKit.getState().assign(slot, row);
+          e.preventDefault();
+          return;
+        }
+      }
+
       switch (e.key) {
+        case "Enter": {
+          // §7.2: add the selection to the next empty slot.
+          const row = store.rows[store.selectedIndex];
+          if (row !== undefined) useKit.getState().assignToNextEmpty(row);
+          e.preventDefault();
+          break;
+        }
         case "ArrowLeft":
           void unlock();
           store.moveSelection(-1);
