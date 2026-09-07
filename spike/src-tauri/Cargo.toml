@@ -17,7 +17,6 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-drag = "2"
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
 thiserror = "2"
 # Already in the tree via drag-rs. Named explicitly so `check_paths` can show the
 # exact string drag-rs will hand to the shell -- it canonicalizes with dunce.
