@@ -13,9 +13,9 @@ Copy these from the banner at the top of the spike window.
 | | |
 |---|---|
 | Date | 2026-09-07 (log timestamps 10:39–10:43) |
-| Windows version | |
-| WebView2 runtime | |
-| Tauri version | |
+| Windows version | Windows 11 (x86_64) |
+| WebView2 runtime | 152.0.4191.66 |
+| Tauri version | 2.11.5 |
 | REAPER version | |
 | Sitala version | |
 | Sitala plugin format used (VST3 / VST2 / CLAP) | |
@@ -71,11 +71,11 @@ accepted the data object, not that the sample got mapped to the pad.
 | 2 | Repeat onto a different pad | `dragstart` | Dropped | yes | worked |
 | 3 | Path with spaces | `dragstart` | Dropped | yes | worked |
 | 4 | Path with non-ASCII characters | `dragstart` | Dropped | yes | worked — UTF-16 end to end, as the source predicted |
-| 5 | UNC path (`\\NAS\...`) | | | | see notes — confirm whether this was run |
-| 6 | Two files at once | | | | see notes — confirm what Sitala did |
-| 7 | → REAPER arrange view (not Sitala) | | | | not run — the diagnostic is moot now that row 1 passes |
-| 8 | → Explorer / a text editor | `dragstart` | **Dropped** | — | Badge only. The cursor was at (481, 528), possibly still over the spike's own window, and no copied file was separately confirmed — so this row evidences that a drop target accepted, not specifically that Explorer did. Re-run onto an Explorer file list and check for the copy if you want it clean. 10:39:06. |
-| 9 | Path over 260 chars *(beyond §14)* | `dragstart` | **crashed** | — | **The app process died and the window closed.** 321-char path. Not a rejection — a panic inside the plugin. Mechanism below. |
+| 5 | UNC path (`\\NAS\...`) | — | — | — | **not run** — no share available. Recorded as skipped, not as a pass. |
+| 6 | Two files at once | `dragstart` | Dropped | ? | **Inconclusive — needs a re-run.** The same path was entered in both fields, so the `CF_HDROP` carried one file twice. That cannot show whether Sitala fills two pads. §11.3 stays open. 11:07:05. |
+| 7 | → REAPER arrange view (not Sitala) | `dragstart` | Dropped | — | REAPER's arrange view accepted the drop. Confirms the drag source is sound independently of Sitala. 11:07:59. |
+| 8 | → Explorer / a text editor | `dragstart` | Dropped | — | Two attempts, both accepted, at x≈1650–1670 — well outside the spike window, so this one is genuinely an external target. 11:08:19 and 11:08:22. |
+| 9 | Path over 260 chars *(beyond §14)* | `dragstart` | **crashed** | — | **The app process died and the window closed.** 321-char path (325 once `dunce` prefixes `\\?\`). Not a rejection — a panic inside the plugin. Mechanism below. |
 | 10 | Standalone Sitala *(only if 1 failed)* | — | — | — | not applicable; row 1 passed |
 
 **Did `dragstart` and `mousedown` behave differently?**
@@ -86,6 +86,37 @@ accepted the data object, not that the sample got mapped to the pad.
 
 **What did Sitala do with the two-file drop (test 6)?** Fill consecutive pads,
 take the first, take the last, or reject?
+
+> **Unanswered.** The run passed the same file in both fields, so the drop
+> carried one path twice — which cannot distinguish "filled two pads" from
+> "took the first". Needs a re-run with two different files. §11.3's assumption
+> (single-file works, multi-file does not until proven otherwise) stands for
+> now, and the kit-export path covers the batch case either way.
+
+---
+
+## Formats Sitala accepts (§11.2)
+
+Every file below was dragged onto a pad and every one reported `Dropped`. That
+is uninformative on its own: the drop is accepted at the OLE layer before
+Sitala parses the file, so the badge says nothing about whether the format is
+usable. **`Loaded?` is the column that matters** and is filled in by ear.
+
+| file | format | Badge | Loaded? |
+|---|---|---|---|
+| `wav_s24_44k_stereo.wav` | 24-bit PCM, 44.1k, stereo | Dropped | |
+| `wav_f32_ext_96k_stereo.wav` | 32-bit float extensible, 96k, stereo | Dropped | |
+| `wav_s16_8k_mono.wav` | 16-bit PCM, 8k, mono | Dropped | |
+| `wav_u8_44k_mono.wav` | 8-bit unsigned PCM, 44.1k, mono | Dropped | |
+| `aiff_s16_44k_stereo.aiff` | AIFF 16-bit, 44.1k, stereo | Dropped | |
+| `wav_s16_44k_junk_chunks.wav` | 16-bit PCM behind JUNK/LIST/bext chunks | Dropped | |
+
+Whatever Sitala refuses is what §7.8's pre-conversion has to normalise, and it
+sets the ffmpeg defaults for Phase 3. If the float/96k file fails, re-test with
+`wav_f32_48k_mono.wav` and `wav_s24_96k_stereo.wav` to separate the two
+variables.
+
+**Conclusion for pre-conversion defaults:**
 
 > 
 
