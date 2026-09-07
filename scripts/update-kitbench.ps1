@@ -63,15 +63,17 @@ if (-not $NoPull) {
     # state, so say so first.
     $dirty = git status --porcelain
     if ($dirty) {
-        # Loud, because the build still succeeds -- it just builds the old code,
-        # and a successful-looking update that changed nothing is worse than a
-        # failure.
+        # A stop, not a warning. Carrying on rebuilds the same commit and
+        # reports success, which is indistinguishable from an update that
+        # worked -- and when this runs from the app's button the console closes
+        # on success, so a warning would not even be read.
         Write-Host ''
-        Write-Warning 'NOT UPDATING: there are uncommitted changes here, so the pull was skipped.'
-        Write-Warning 'What follows builds the code already checked out, not the latest.'
+        Write-Host 'These files differ from the last commit:' -ForegroundColor Yellow
         Write-Host $dirty -ForegroundColor Yellow
-        Write-Host 'Commit or stash these, then run again to actually update.' -ForegroundColor Yellow
         Write-Host ''
+        throw ('Cannot update: the pull would overwrite local changes. ' +
+               'If you did not make them, run `git checkout -- .` and try again. ' +
+               'To rebuild the current code without updating, pass -NoPull.')
     } else {
         Write-Host 'Pulling...' -ForegroundColor Cyan
         git pull --ff-only
