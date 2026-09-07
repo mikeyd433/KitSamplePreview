@@ -139,10 +139,7 @@ fn relative_to(canonical: &str, root_canonical: &str) -> String {
 }
 
 fn parent_of(rel_path: &str) -> String {
-    match rel_path.rfind('\\') {
-        Some(i) => rel_path[..i].to_string(),
-        None => String::new(),
-    }
+    paths::parent(rel_path).to_string()
 }
 
 /// Runs a scan to completion on the calling thread, streaming progress.
@@ -254,10 +251,7 @@ pub fn run(
                 report.updated += 1;
             }
 
-            let filename = Path::new(&candidate.rel_path)
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_else(|| candidate.rel_path.clone());
+            let filename = paths::file_name(&candidate.rel_path).to_string();
             let probed = probe_result.unwrap_or_default();
 
             db::upsert_sample(
@@ -266,11 +260,7 @@ pub fn run(
                     root_id: root.id,
                     search_text: search::search_text(&candidate.rel_path),
                     parent_dir: parent_of(&candidate.rel_path),
-                    ext: Path::new(&filename)
-                        .extension()
-                        .and_then(|e| e.to_str())
-                        .unwrap_or("")
-                        .to_ascii_lowercase(),
+                    ext: paths::extension(&filename),
                     filename,
                     path: candidate.canonical,
                     rel_path: candidate.rel_path,

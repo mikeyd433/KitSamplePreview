@@ -42,6 +42,9 @@ pub fn normalize_lexical(input: &str) -> String {
     // A UNC path keeps exactly two leading separators; everything else
     // collapses runs of them.
     let is_unc = unc_from_verbatim || s.starts_with(r"\\");
+    // A single leading separator is a root-relative path (`\Samples\kick.wav`),
+    // which is rare but legal on Windows and must not silently become relative.
+    let is_rooted = !is_unc && s.starts_with('\\');
     let body = if is_unc { &s[2..] } else { &s[..] };
 
     // Split first, resolve second: `..` needs to know where the root ends, and
@@ -76,6 +79,8 @@ pub fn normalize_lexical(input: &str) -> String {
     let mut out = String::new();
     if is_unc {
         out.push_str(r"\\");
+    } else if is_rooted {
+        out.push('\\');
     }
     for (i, seg) in segments.iter().enumerate() {
         if i > 0 {
@@ -141,13 +146,55 @@ pub fn needs_verbatim_prefix(path: &str) -> bool {
 ///
 /// Only differs from the stored form for long paths, and only on Windows.
 pub fn for_file_io(path: &str) -> PathBuf {
-    if cfg!(windows) && needs_verbatim_prefix(path) && !path.starts_with(r"\\?\") {
+    // Development affordance, not a cross-platform abstraction (SPEC §0 rules
+    // those out). The stored form is Windows-shaped everywhere so that
+    // `normalize_lexical` and its tests behave identically on any machine;
+    // this hands the separator back on a host that wants the other one, which
+    // is what lets the app be run and smoke-tested off-target. On Windows the
+    // branch compiles to nothing.
+    #[cfg(not(windows))]
+    return PathBuf::from(path.replace('\\', "/"));
+
+    #[cfg(windows)]
+    if needs_verbatim_prefix(path) && !path.starts_with(r"\\?\") {
         if let Some(rest) = path.strip_prefix(r"\\") {
             return PathBuf::from(format!(r"\\?\UNC\{rest}"));
         }
         return PathBuf::from(format!(r"\\?\{path}"));
+    } else {
+        return PathBuf::from(path);
     }
-    PathBuf::from(path)
+}
+
+/// The last component of a stored path.
+///
+/// Not `std::path::Path::file_name`: the stored spelling is Windows-shaped, and
+/// `std::path` only treats `\` as a separator when compiled for Windows. Doing
+/// the split here means the same answer on any host, which is what makes the
+/// scan testable and runnable off-target.
+pub fn file_name(path: &str) -> &str {
+    match path.rfind('\\') {
+        Some(i) => &path[i + 1..],
+        None => path,
+    }
+}
+
+/// Everything before the last component, or `""` at the top.
+pub fn parent(path: &str) -> &str {
+    match path.rfind('\\') {
+        Some(i) => &path[..i],
+        None => "",
+    }
+}
+
+/// Lowercased extension without the dot, or `""`.
+pub fn extension(path: &str) -> String {
+    let name = file_name(path);
+    match name.rfind('.') {
+        // A leading dot is a hidden file, not an extension.
+        Some(i) if i > 0 => name[i + 1..].to_ascii_lowercase(),
+        _ => String::new(),
+    }
 }
 
 #[cfg(test)]
@@ -222,6 +269,27 @@ mod tests {
         assert_eq!(normalize_lexical(r"..\up.wav"), r"..\up.wav");
         assert_eq!(normalize_lexical(r"..\..\up.wav"), r"..\..\up.wav");
         assert_eq!(normalize_lexical(r"a\..\b.wav"), "b.wav");
+    }
+
+    #[test]
+    fn a_leading_root_separator_survives() {
+        // Dropping this turns an absolute path into a relative one, and the
+        // scan then walks nothing at all.
+        assert_eq!(normalize_lexical(r"\Samples\kick.wav"), r"\Samples\kick.wav");
+        assert_eq!(normalize_lexical("/Samples/kick.wav"), r"\Samples\kick.wav");
+        assert_eq!(normalize_lexical(r"\Samples\.\kick.wav"), r"\Samples\kick.wav");
+    }
+
+    #[test]
+    fn components_split_on_the_stored_separator() {
+        assert_eq!(file_name(r"C:\Samples\808s\kick.wav"), "kick.wav");
+        assert_eq!(file_name("kick.wav"), "kick.wav");
+        assert_eq!(parent(r"C:\Samples\808s\kick.wav"), r"C:\Samples\808s");
+        assert_eq!(parent("kick.wav"), "");
+        assert_eq!(extension(r"C:\Samples\KICK.WAV"), "wav");
+        assert_eq!(extension("kick"), "");
+        assert_eq!(extension(".hidden"), "");
+        assert_eq!(extension(r"C:\my.folder\kick"), "");
     }
 
     #[test]

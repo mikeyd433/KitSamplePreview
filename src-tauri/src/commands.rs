@@ -61,10 +61,7 @@ pub fn add_root(app: AppHandle, state: State<'_, AppState>, path: String) -> Cmd
         return Err(format!("not a folder: {path}"));
     }
     let canonical = paths::canonicalize(&raw);
-    let label = std::path::Path::new(&canonical)
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| canonical.clone());
+    let label = paths::file_name(&canonical).to_string();
 
     allow_asset_access(&app, &canonical)?;
     let conn = state.db.lock().map_err(to_msg)?;
@@ -212,7 +209,14 @@ pub fn resolve_playable(state: State<'_, AppState>, id: i64) -> CmdResult<Playab
     if row.removed {
         return Err(format!("file is missing: {}", row.path));
     }
-    Ok(Playable { path: row.path, transcoded: false })
+    // The file-I/O spelling, not the stored one. They differ for a path over
+    // MAX_PATH, where the asset protocol handler needs the `\\?\` prefix to open
+    // the file at all — so returning the stored form would make exactly the
+    // deeply-nested samples SPEC §3 warns about unpreviewable.
+    Ok(Playable {
+        path: paths::for_file_io(&row.path).to_string_lossy().into_owned(),
+        transcoded: false,
+    })
 }
 
 // ---------------------------------------------------------------------------
