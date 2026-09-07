@@ -156,10 +156,22 @@ $shortcut.Description      = 'Kitbench -- drum sample auditioner'
 $shortcut.Save()
 
 $commit = (git rev-parse --short=7 HEAD).Trim()
-$dirtyNow = if (git status --porcelain) { '+' } else { '' }
+$changes = git status --porcelain
+$dirtyNow = if ($changes) { '+' } else { '' }
 Write-Host ''
 Write-Host "Built $commit$dirtyNow" -ForegroundColor Green
 Write-Host 'The version badge in the status bar should show the same thing.' -ForegroundColor Green
+
+if ($changes) {
+    # Name them. A dirty tree makes the next run skip its pull, so "+" is a
+    # standing hazard rather than a curiosity, and it is not worth a round trip
+    # to find out which files are responsible.
+    Write-Host ''
+    Write-Warning 'The "+" means these files differ from the last commit:'
+    Write-Host $changes -ForegroundColor Yellow
+    Write-Host 'If you did not edit them, `git checkout -- .` clears it and the next' -ForegroundColor Yellow
+    Write-Host 'update will pull normally.' -ForegroundColor Yellow
+}
 Write-Host "Shortcut: $linkPath" -ForegroundColor Green
 
 if ($Relaunch) {
