@@ -59,11 +59,43 @@ function blankRow(file: AudioFile): Row {
   };
 }
 
+/**
+ * Rejects if `p` has not settled in `ms`.
+ *
+ * Not defensive padding: a zero-byte file in the corpus made `decodeAudioData`
+ * return a promise that never settled at all, which stalled the whole run and
+ * left every later row showing "—" — indistinguishable from a run that had
+ * finished. A bench that can quietly stop early is worse than no bench, since
+ * the missing rows look like results.
+ */
+function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`${what} did not settle within ${ms} ms — treating as a failure`)),
+      ms,
+    );
+    p.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e: unknown) => { clearTimeout(timer); reject(e instanceof Error ? e : new Error(String(e))); },
+    );
+  });
+}
+
+const DECODE_TIMEOUT_MS = 10_000;
+const READ_TIMEOUT_MS = 15_000;
+
 async function decode(ctx: AudioContext, bytes: ArrayBuffer): Promise<DecodeResult> {
+  if (bytes.byteLength === 0) {
+    return { ok: false, error: "empty file — nothing to decode" };
+  }
   try {
     // decodeAudioData detaches the buffer it is given, so each attempt needs
     // its own copy or the second one fails for the wrong reason.
-    const buffer = await ctx.decodeAudioData(bytes.slice(0));
+    const buffer = await withTimeout(
+      ctx.decodeAudioData(bytes.slice(0)),
+      DECODE_TIMEOUT_MS,
+      "decodeAudioData",
+    );
     let peak = 0;
     for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
       const data = buffer.getChannelData(ch);
@@ -128,11 +160,12 @@ export function DecodeBench(): React.JSX.Element {
     let assetFetchError: string | null = null;
     let assetDecode: DecodeResult = null;
     try {
-      const res = await fetch(row.assetUrl);
+      const res = await withTimeout(fetch(row.assetUrl), READ_TIMEOUT_MS, "asset fetch");
       if (!res.ok) {
         assetFetchError = `HTTP ${res.status} ${res.statusText}`;
       } else {
-        assetDecode = await decode(ctx, await res.arrayBuffer());
+        const bytes = await withTimeout(res.arrayBuffer(), READ_TIMEOUT_MS, "asset arrayBuffer");
+        assetDecode = await decode(ctx, bytes);
       }
     } catch (e) {
       // The SPEC §3 trap: a scope miss surfaces here as a bare network error
@@ -143,7 +176,12 @@ export function DecodeBench(): React.JSX.Element {
     let ipcReadError: string | null = null;
     let ipcDecode: DecodeResult = null;
     try {
-      ipcDecode = await decode(ctx, await readFileBytes(row.file.path));
+      const bytes = await withTimeout(
+        readFileBytes(row.file.path),
+        READ_TIMEOUT_MS,
+        "read_file_bytes",
+      );
+      ipcDecode = await decode(ctx, bytes);
     } catch (e) {
       ipcReadError = errorText(e);
     }
@@ -172,7 +210,16 @@ export function DecodeBench(): React.JSX.Element {
   const runAll = useCallback(async (): Promise<void> => {
     setBusy(true);
     try {
-      for (const [i, row] of rows.entries()) await runRow(i, row);
+      for (const [i, row] of rows.entries()) {
+        // One pathological file must not end the run; the rows after it would
+        // read as "not reached" and be mistaken for results.
+        try {
+          await runRow(i, row);
+        } catch (e) {
+          log.error("decode", `${row.file.name} — row aborted`, errorText(e));
+          setRows((rs) => rs.map((r, j) => (j === i ? { ...r, running: false } : r)));
+        }
+      }
     } finally {
       setBusy(false);
     }

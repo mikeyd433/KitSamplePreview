@@ -42,10 +42,9 @@ the header-sniffer tests.
    The fields are editable and persist to `localStorage`, so the matrix survives
    a reload.
 
-   You will need to make some of those files. Rows 3 and 4 are a folder rename
-   away. Row 5 needs a reachable share. Row 9 wants nested folders until the
-   pre-flight character count clears 260. Note a row as skipped rather than
-   guessing at it.
+   `npm run corpus` makes most of what you need — see below. Row 5 (UNC) still
+   needs a reachable share, and rows 1, 2, 6, 7 and 8 want real samples you
+   recognise by ear. Note a row as skipped rather than guessing at it.
 
 2. **Watch the pre-flight table** under each row. It shows what
    `dunce::canonicalize` makes of the path, which is the string the shell
@@ -60,15 +59,45 @@ the header-sniffer tests.
    `DRAGDROP_S_DROP` — the target accepted the data object. It does not prove
    Sitala mapped the sample to the pad. Confirm that separately.
 
-5. **Run the decode bench.** Put the awkward files in one folder — 8-, 16-,
-   24-bit and 32-bit float WAV, mono and stereo, 96 kHz, AIFF, MP3, FLAC, OGG —
-   and point the bench at it. Each file is decoded twice, once through the asset
-   protocol and once from bytes handed over IPC, so a failure is attributable:
-   asset fails where ipc succeeds ⇒ asset protocol scope (SPEC §3), both fail ⇒
-   WebView2 genuinely refuses the format.
+5. **Run the decode bench** against `test-corpus/decode`. Each file is decoded
+   twice, once through the asset protocol and once from bytes handed over IPC,
+   so a failure is attributable: asset fails where ipc succeeds ⇒ asset protocol
+   scope (SPEC §3), both fail ⇒ WebView2 genuinely refuses the format.
+
+   Watch the peak column as well as the badges. Every generated file peaks at
+   0.500, so a row that decodes but comes back 0.000 decoded to silence, and
+   anything else decoded wrong. Both are quieter failures than a refusal. Files
+   above 44.1 kHz land slightly under 0.500 because `decodeAudioData` resamples
+   to the AudioContext rate — that is the resampler, not a fault.
 
 6. **Fill in `RESULTS.md`** and stop. The log pane and the decode table both
    have *copy as markdown* buttons that paste straight into it.
+
+## Test corpus
+
+```
+npm run corpus                 # → spike/test-corpus/
+npm run corpus -- D:\somewhere  # or wherever you like
+```
+
+Generates the files that are tedious to assemble by hand, and prints the exact
+paths to paste into rows 3, 4 and 9:
+
+- `decode/` — every bit depth and container combination worth testing: 8-bit
+  unsigned, 16/24/32-bit integer, 32-bit float both as tag 3 and as
+  `WAVE_FORMAT_EXTENSIBLE`, 8 kHz through 96 kHz, mono and stereo, AIFF, AIFC
+  `sowt`, a WAV with JUNK/LIST/bext chunks ahead of `fmt `, and three broken
+  files (truncated, header-only, zero-byte) that must fail cleanly.
+- `paths/` — a path with spaces, a path with accented and CJK characters, and a
+  nesting deep enough to clear MAX_PATH.
+
+MP3, FLAC and OGG need an encoder, so they appear only if `ffmpeg` is on your
+PATH; otherwise copy a few real ones in, because SPEC §8 expects all three to
+work. (Unrelated to the bundled ffmpeg sidecar §3 specifies for the real app.)
+
+This is format torture for the decode bench, not a sample library. SPEC §15's
+"never fake data" still governs every phase after this one — Phase 1 gets
+pointed at a real sample pack.
 
 ## Notes on the rig
 

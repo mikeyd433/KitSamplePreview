@@ -4,3 +4,4 @@ target/
 *.local
 .DS_Store
 **/gen/schemas/
+test-corpus/
