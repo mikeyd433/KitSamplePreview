@@ -63,8 +63,15 @@ if (-not $NoPull) {
     # state, so say so first.
     $dirty = git status --porcelain
     if ($dirty) {
-        Write-Warning 'Uncommitted changes here; skipping the pull so nothing is clobbered.'
-        Write-Warning 'Commit or stash them, then run this again to update.'
+        # Loud, because the build still succeeds — it just builds the old code,
+        # and a successful-looking update that changed nothing is worse than a
+        # failure.
+        Write-Host ''
+        Write-Warning 'NOT UPDATING: there are uncommitted changes here, so the pull was skipped.'
+        Write-Warning 'What follows builds the code already checked out, not the latest.'
+        Write-Host $dirty -ForegroundColor Yellow
+        Write-Host 'Commit or stash these, then run again to actually update.' -ForegroundColor Yellow
+        Write-Host ''
     } else {
         Write-Host 'Pulling...' -ForegroundColor Cyan
         git pull --ff-only
@@ -81,8 +88,17 @@ if ($Relaunch) {
     }
 }
 
+# `npm ci` rather than `npm install`: install can rewrite package-lock.json,
+# which leaves the tree dirty, which makes the next run skip its pull and
+# rebuild stale code without saying anything much. ci installs exactly the lock
+# file and never modifies it.
 Write-Host 'Installing frontend dependencies...' -ForegroundColor Cyan
-npm install --no-audit --no-fund
+npm ci --no-audit --no-fund
+if ($LASTEXITCODE -ne 0) {
+    Write-Warning 'npm ci failed (lock file out of step with package.json?); falling back to npm install.'
+    npm install --no-audit --no-fund
+    if ($LASTEXITCODE -ne 0) { throw 'Installing dependencies failed.' }
+}
 
 # --no-bundle: we point the shortcut at the executable, so building the NSIS
 # installer would only add a tooling download and another way to fail.
@@ -108,10 +124,11 @@ $shortcut.Description      = 'Kitbench — drum sample auditioner'
 $shortcut.Save()
 
 $commit = (git rev-parse --short=7 HEAD).Trim()
+$dirtyNow = if (git status --porcelain) { '+' } else { '' }
 Write-Host ''
-Write-Host "Built $commit" -ForegroundColor Green
+Write-Host "Built $commit$dirtyNow" -ForegroundColor Green
+Write-Host 'The version badge in the status bar should show the same thing.' -ForegroundColor Green
 Write-Host "Shortcut: $linkPath" -ForegroundColor Green
-Write-Host 'The status bar shows the same commit, so you can confirm what is running.'
 
 if ($Relaunch) {
     Write-Host 'Starting Kitbench...' -ForegroundColor Cyan
