@@ -78,14 +78,33 @@ if (-not $NoPull) {
     }
 }
 
-if ($Relaunch) {
-    # The app spawned this and is on its way out. Windows will not let a
-    # running executable be overwritten, so wait for it to actually go.
-    $waited = 0
-    while ((Get-Process -Name 'kitbench' -ErrorAction SilentlyContinue) -and $waited -lt 30) {
+# Windows will not let a running executable be replaced, and the build fails
+# with a bare "Access is denied" that says nothing about why.
+function Wait-ForKitbenchToExit([int] $Seconds = 10) {
+    $deadline = (Get-Date).AddSeconds($Seconds)
+    while ((Get-Process -Name 'kitbench' -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) {
         Start-Sleep -Milliseconds 250
-        $waited++
     }
+    return -not (Get-Process -Name 'kitbench' -ErrorAction SilentlyContinue)
+}
+
+if ($Relaunch) {
+    # The app spawned this and is on its way out; give it a moment.
+    [void] (Wait-ForKitbenchToExit 10)
+}
+
+if (Get-Process -Name 'kitbench' -ErrorAction SilentlyContinue) {
+    Write-Host ''
+    Write-Warning 'Kitbench is running, and Windows will not replace a running program.'
+    $answer = Read-Host 'Close it and continue? [Y/n]'
+    if ($answer -and $answer -notmatch '^[Yy]') {
+        throw 'Close Kitbench and run this again.'
+    }
+    Stop-Process -Name 'kitbench' -Force -ErrorAction SilentlyContinue
+    if (-not (Wait-ForKitbenchToExit 10)) {
+        throw 'Kitbench would not close. Close it by hand and run this again.'
+    }
+    Write-Host 'Closed.' -ForegroundColor Cyan
 }
 
 # `npm ci` rather than `npm install`: install can rewrite package-lock.json,
@@ -103,11 +122,24 @@ if ($LASTEXITCODE -ne 0) {
 # --no-bundle: we point the shortcut at the executable, so building the NSIS
 # installer would only add a tooling download and another way to fail.
 Write-Host 'Building (several minutes the first time, much less after)...' -ForegroundColor Cyan
+$buildStarted = Get-Date
 npm run tauri -- build --no-bundle
+if ($LASTEXITCODE -ne 0) {
+    throw "The build failed (exit code $LASTEXITCODE). The error is above; nothing has changed."
+}
 
 $exe = Join-Path $repo 'src-tauri\target\release\kitbench.exe'
 if (-not (Test-Path $exe)) {
-    throw "Build finished but $exe is missing. Check the build output above."
+    throw "Build reported success but $exe is missing."
+}
+
+# Existence is not enough: a failed build leaves the PREVIOUS executable sitting
+# there, which is exactly how this script once announced a successful update
+# over a build that had failed.
+$builtFile = Get-Item $exe
+if ($builtFile.LastWriteTime -lt $buildStarted) {
+    throw ("The build did not produce a new executable — $exe was last written " +
+           "$($builtFile.LastWriteTime), before this build started. Nothing has changed.")
 }
 
 # Point the shortcut at the built executable rather than the installer: it
