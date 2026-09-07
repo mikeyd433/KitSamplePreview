@@ -12,7 +12,7 @@ Copy these from the banner at the top of the spike window.
 
 | | |
 |---|---|
-| Date | |
+| Date | 2026-09-07 (log timestamps 10:39–10:43) |
 | Windows version | |
 | WebView2 runtime | |
 | Tauri version | |
@@ -67,20 +67,22 @@ accepted the data object, not that the sample got mapped to the pad.
 
 | # | Test | Trigger mode | Badge | Loaded? | Notes |
 |---|---|---|---|---|---|
-| 1 | One 16-bit 44.1k WAV → Sitala pad | | | | |
-| 2 | Repeat onto a different pad | | | | |
-| 3 | Path with spaces | | | | |
-| 4 | Path with non-ASCII characters | | | | |
-| 5 | UNC path (`\\NAS\...`) | | | | |
-| 6 | Two files at once | | | | |
-| 7 | → REAPER arrange view (not Sitala) | | | | |
-| 8 | → Explorer / a text editor | | | | |
-| 9 | Path over 260 chars *(beyond §14)* | | | | |
-| 10 | Standalone Sitala *(only if 1 failed)* | | | | |
+| 1 | One 16-bit 44.1k WAV → Sitala pad | `dragstart` | **Dropped** | **yes** | **The core question, answered yes.** Sitala took the sample onto the pad and it triggers. Confirmed by ear, not just by badge. 10:43:12. |
+| 2 | Repeat onto a different pad | | | | not yet run |
+| 3 | Path with spaces | | | | not yet run |
+| 4 | Path with non-ASCII characters | | | | not yet run |
+| 5 | UNC path (`\\NAS\...`) | | | | not yet run |
+| 6 | Two files at once | | | | not yet run |
+| 7 | → REAPER arrange view (not Sitala) | | | | not run — the diagnostic is moot now that row 1 passes |
+| 8 | → Explorer / a text editor | `dragstart` | **Dropped** | — | Badge only. The cursor was at (481, 528), possibly still over the spike's own window, and no copied file was separately confirmed — so this row evidences that a drop target accepted, not specifically that Explorer did. Re-run onto an Explorer file list and check for the copy if you want it clean. 10:39:06. |
+| 9 | Path over 260 chars *(beyond §14)* | | | | not yet run — generated path is ~300 chars |
+| 10 | Standalone Sitala *(only if 1 failed)* | — | — | — | not applicable; row 1 passed |
 
 **Did `dragstart` and `mousedown` behave differently?**
 
-> 
+> `dragstart` works — both recorded rows used it. `mousedown` has not been
+> exercised, so no comparison yet. Since `dragstart` works there is no pressing
+> reason to need the alternative.
 
 **What did Sitala do with the two-file drop (test 6)?** Fill consecutive pads,
 take the first, take the last, or reject?
@@ -153,4 +155,18 @@ Tick one. SPEC §14 defines what each one means for the phases that follow.
 
 **Anything the spike turned up that the spec did not anticipate:**
 
-> 
+> 1. **`startDrag`'s `icon` is not optional**, and is not raw bytes. SPEC §5
+>    sketches `start_drag(paths, icon: Option<Vec<u8>>)`; the plugin requires a
+>    `data:image/png;base64,…` string (or a `{File|Raw}` object). Phase 3's
+>    `drag.rs` wrapper needs to account for that.
+> 2. **`dragDropEnabled: false` is required on the window.** With Tauri's own
+>    file-drop handler active the webview never emits `dragstart`, so the
+>    `dragstart` trigger would look broken for reasons unrelated to Sitala.
+>    Carry this into the Phase 1 window config.
+> 3. **The window freezes for the duration of a drag.** `DoDragDrop` blocks the
+>    main thread, so the app stops repainting and queued log entries all land
+>    afterwards. Harmless here, but worth knowing before it reads as a hang in
+>    the real app.
+> 4. **A drag with no path silently does nothing** — which reads as "drag is
+>    broken" rather than "no file selected". The real app's rows always carry a
+>    path so this cannot arise, but it cost time here.
