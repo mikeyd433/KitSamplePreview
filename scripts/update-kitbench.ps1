@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Pulls the latest Kitbench, builds it, and puts a shortcut on the Desktop.
 
@@ -8,7 +8,7 @@
   double-click would be unusable. The Desktop shortcut points at the built
   executable, so launching afterwards is instant.
 
-  After it finishes, check the version badge in the app's status bar — it shows
+  After it finishes, check the version badge in the app's status bar -- it shows
   the commit the running binary was built from, which is the only reliable way
   to tell a fresh build from a stale one.
 
@@ -32,7 +32,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 # Launched from the app's update button, this window is the only place an error
-# can be read — so it must not vanish on failure.
+# can be read -- so it must not vanish on failure.
 trap {
     Write-Host ''
     Write-Host "Update failed: $_" -ForegroundColor Red
@@ -63,7 +63,7 @@ if (-not $NoPull) {
     # state, so say so first.
     $dirty = git status --porcelain
     if ($dirty) {
-        # Loud, because the build still succeeds — it just builds the old code,
+        # Loud, because the build still succeeds -- it just builds the old code,
         # and a successful-looking update that changed nothing is worse than a
         # failure.
         Write-Host ''
@@ -138,7 +138,7 @@ if (-not (Test-Path $exe)) {
 # over a build that had failed.
 $builtFile = Get-Item $exe
 if ($builtFile.LastWriteTime -lt $buildStarted) {
-    throw ("The build did not produce a new executable — $exe was last written " +
+    throw ("The build did not produce a new executable -- $exe was last written " +
            "$($builtFile.LastWriteTime), before this build started. Nothing has changed.")
 }
 
@@ -152,7 +152,7 @@ $shortcut = $shell.CreateShortcut($linkPath)
 $shortcut.TargetPath       = $exe
 $shortcut.WorkingDirectory = Split-Path -Parent $exe
 $shortcut.IconLocation     = "$exe,0"
-$shortcut.Description      = 'Kitbench — drum sample auditioner'
+$shortcut.Description      = 'Kitbench -- drum sample auditioner'
 $shortcut.Save()
 
 $commit = (git rev-parse --short=7 HEAD).Trim()
