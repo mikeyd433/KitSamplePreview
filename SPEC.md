@@ -277,7 +277,9 @@ Format: min/max pairs at a fixed resolution — 400 buckets per file regardless 
 
 The inspector waveform shows a playhead during preview. Clicking it does **not** seek — preview always plays from the start (a drum one-shot auditioned from the middle is meaningless), but a click-to-seek option can be revisited if loops end up in the library.
 
-### 7.5 Context auditioning
+### 7.5 Context auditioning — **dropped (see §9, Phase 4)**
+
+Kept below as written, because it records the reasoning rather than the plan.
 
 The differentiating feature. Sitala makes you commit a sample to a pad before you hear it in a kit; Kitbench lets you hear it over a groove first.
 
@@ -403,12 +405,21 @@ Peaks at scan time, list thumbnails, inspector waveform with playhead, format me
 
 *Done when:* a full 16-pad kit can be assembled and landed in Sitala — by drag if Phase 0 said yes, by export-to-folder otherwise.
 
-**Phase 4 — Context auditioning.**
-Loop slot, BPM entry, lookahead-scheduled pulse triggering, independent loop gain, bounce-folder watch (§7.5). Kit-context playback if the loop slot proves the concept.
+**Phase 4 — Context auditioning. Dropped, at the developer's request.**
+~~Loop slot, BPM entry, lookahead-scheduled pulse triggering, independent loop gain, bounce-folder watch (§7.5). Kit-context playback if the loop slot proves the concept.~~
 
-*Done when:* a candidate kick can be auditioned on every downbeat against a looping break, with no audible drift after two minutes of continuous playback.
+§7.5 called this "the differentiating feature", and dropping it is a real
+narrowing of the tool: candidates are auditioned on their own rather than over
+a groove. The developer judged it unnecessary in practice, and §7.5 was always
+about hearing a sample in context rather than about the DAW — it never talked
+to REAPER, and there is no integration being given up here.
 
-**Phase 5 — Deferred.**
+Nothing else depends on it. The loop slot is a second, independent voice in the
+§8 node graph, so its absence leaves the graph as built rather than half-wired.
+
+*Superseded.*
+
+**Phase 5 — Deferred.** Unchanged: still out of scope.
 - **MIDI controller mapping** (Akai MPK Mini MK3, the developer's controller) — its 8 pads trigger kit slots and audition the selection, knobs drive preview gain and loop level. Deliberately out of scope for now, at the developer's explicit request. Web MIDI in the webview is the likely path and would be a small addition once the kit tray exists. Do not build this in Phases 0–4.
 - Sitala preset writing (§7.8), if the format turns out to be tractable.
 - Audio-content-based category classification.
