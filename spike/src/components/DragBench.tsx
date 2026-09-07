@@ -27,7 +27,8 @@ type Outcome =
   | { kind: "pending" }
   | { kind: "dropped"; cursor: unknown }
   | { kind: "cancelled"; cursor: unknown }
-  | { kind: "error"; message: string };
+  | { kind: "error"; message: string }
+  | { kind: "blocked"; message: string };
 
 type PathMap = Record<string, string[]>;
 
@@ -99,6 +100,30 @@ export function DragBench(): React.JSX.Element {
       }
 
       const rowChecks = checks[test.id];
+
+      // Row 9 established that this crashes the process, so the spike refuses
+      // it rather than reproducing a known result.
+      //
+      // drag-rs canonicalizes with dunce, which yields a `\\?\` verbatim path
+      // for anything over MAX_PATH. The shell namespace parser rejects that
+      // prefix, so ILCreateFromPathW returns a null ITEMIDLIST,
+      // SHCreateShellItemArrayFromIDLists fails, and
+      // `get_shell_item_array(paths).unwrap()` panics on the main thread —
+      // taking the whole app with it, with no error to report.
+      const unsafePaths = rowChecks?.filter((c) => c.verbatim || c.charLen > 259) ?? [];
+      if (unsafePaths.length > 0) {
+        const message =
+          "blocked: over MAX_PATH. drag-rs would panic on this and kill the app — " +
+          "see RESULTS.md row 9. Phase 3's drag wrapper needs this same guard.";
+        log.error(`test ${test.id}`, message, unsafePaths.map((c) => ({
+          chars: c.charLen,
+          verbatim: c.verbatim,
+          canonical: c.canonical,
+        })));
+        setOutcomes((o) => ({ ...o, [test.id]: { kind: "blocked", message } }));
+        return;
+      }
+
       const missing = rowChecks?.filter((c) => !c.exists) ?? [];
       if (missing.length > 0) {
         log.warn(
@@ -235,7 +260,9 @@ function DragRow(props: DragRowProps): React.JSX.Element {
           },
         };
 
-  const anyMissing = checks?.some((c) => !c.exists) ?? false;
+  const anyMissing =
+    (checks?.some((c) => !c.exists) ?? false) ||
+    (checks?.some((c) => c.verbatim || c.charLen > 259) ?? false);
   const hasPath = paths.some((p) => p.trim().length > 0);
 
   return (
@@ -332,5 +359,7 @@ function OutcomeBadge({ outcome }: { outcome: Outcome }): React.JSX.Element {
       return <span className="badge badge-warn">Cancelled</span>;
     case "error":
       return <span className="badge badge-err" title={outcome.message}>Error</span>;
+    case "blocked":
+      return <span className="badge badge-err" title={outcome.message}>Blocked — would crash</span>;
   }
 }
