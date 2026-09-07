@@ -9,7 +9,7 @@
 import { create } from "zustand";
 
 import * as ipc from "../ipc/commands";
-import type { FolderNode, LibraryRoot, SampleRow } from "../ipc/commands";
+import type { FolderNode, LibraryRoot, SampleRow, ViewMode } from "../ipc/commands";
 import { prefetch } from "../audio/bufferCache";
 import { previewSample } from "../audio/preview";
 
@@ -35,6 +35,15 @@ interface LibraryState {
   subtree: string | null;
   text: string;
 
+  viewMode: ViewMode;
+  /**
+   * Tiles per row, reported by the grid as it resizes.
+   *
+   * The keyboard layer needs it: in tile view an up/down press moves a whole
+   * row, and only the grid knows how wide a row currently is.
+   */
+  columns: number;
+
   selectedIndex: number;
   /** Decode failures, keyed by sample id, so a bad row shows why (SPEC §15). */
   rowErrors: Record<number, string>;
@@ -47,6 +56,10 @@ interface LibraryState {
   rescan: (force: boolean) => Promise<void>;
   onScanProgress: (p: ipc.ScanProgress) => void;
   onScanComplete: (c: ipc.ScanComplete) => void;
+
+  loadSettings: () => Promise<void>;
+  setViewMode: (mode: ViewMode) => void;
+  setColumns: (columns: number) => void;
 
   setText: (text: string) => void;
   setRoot: (rootId: number | null) => void;
@@ -68,6 +81,9 @@ export const useLibrary = create<LibraryState>((set, get) => ({
   rootId: null,
   subtree: null,
   text: "",
+
+  viewMode: "list",
+  columns: 1,
 
   selectedIndex: -1,
   rowErrors: {},
@@ -127,6 +143,25 @@ export const useLibrary = create<LibraryState>((set, get) => ({
     set((s) => ({ scan: { ...s.scan, running: false, lastReport: c } }));
     void get().refreshRoots();
     void get().runQuery();
+  },
+
+  loadSettings: async () => {
+    try {
+      const settings = await ipc.getSettings();
+      set({ viewMode: settings.viewMode === "tiles" ? "tiles" : "list" });
+    } catch {
+      // A settings read that fails is not worth blocking startup over; the
+      // defaults are perfectly usable.
+    }
+  },
+
+  setViewMode: (viewMode) => {
+    set({ viewMode });
+    void ipc.setSetting("view.mode", viewMode).catch(() => undefined);
+  },
+
+  setColumns: (columns) => {
+    if (columns > 0 && columns !== get().columns) set({ columns });
   },
 
   setText: (text) => {

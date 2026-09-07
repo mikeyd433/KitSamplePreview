@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { useLibrary } from "../stores/library";
 import type { SampleRow } from "../ipc/commands";
+import { formatDuration, formatRate, rowFault } from "./format";
 
 /**
  * Virtualized from day one (SPEC §13): retrofitting virtualization into a
@@ -14,16 +15,6 @@ import type { SampleRow } from "../ipc/commands";
  */
 const ROW_HEIGHT = 26;
 const OVERSCAN = 8;
-
-function formatDuration(ms: number | null): string {
-  if (ms === null) return "—";
-  return `${(ms / 1000).toFixed(2)}s`;
-}
-
-function formatRate(hz: number | null): string {
-  if (hz === null) return "—";
-  return (hz / 1000).toFixed(1);
-}
 
 export function SampleList(): React.JSX.Element {
   const rows = useLibrary((s) => s.rows);
@@ -116,8 +107,9 @@ interface RowProps {
 function Row({ row, selected, error, onSelect }: RowProps): React.JSX.Element {
   // A file the scan could not read, or one the decoder refused, is shown as a
   // visibly broken row rather than a silent one (SPEC §15).
-  const broken = row.probeError !== null || error !== undefined;
-  const title = row.probeError ?? error ?? row.path;
+  const fault = rowFault(row, error);
+  const broken = fault !== null;
+  const title = fault ?? row.path;
 
   return (
     <div

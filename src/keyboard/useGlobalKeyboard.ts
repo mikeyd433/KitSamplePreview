@@ -40,7 +40,25 @@ export function useGlobalKeyboard(searchRef: React.RefObject<HTMLInputElement | 
       // early so the later keys inherit it.
       if (typing) return;
 
+      // In tile view a vertical press moves a whole row and the horizontal
+      // keys move within one. In list view the horizontal keys stay reserved
+      // for the folder tree, exactly as SPEC §7.2 assigns them.
+      const tiles = store.viewMode === "tiles";
+      const step = tiles ? Math.max(1, store.columns) : 1;
+
       switch (e.key) {
+        case "ArrowLeft":
+          if (!tiles) break;
+          void unlock();
+          store.moveSelection(-1);
+          e.preventDefault();
+          break;
+        case "ArrowRight":
+          if (!tiles) break;
+          void unlock();
+          store.moveSelection(1);
+          e.preventDefault();
+          break;
         case "/":
           searchRef.current?.focus();
           searchRef.current?.select();
@@ -48,20 +66,20 @@ export function useGlobalKeyboard(searchRef: React.RefObject<HTMLInputElement | 
           break;
         case "ArrowDown":
           void unlock();
-          store.moveSelection(1);
+          store.moveSelection(step);
           e.preventDefault();
           break;
         case "ArrowUp":
           void unlock();
-          store.moveSelection(-1);
+          store.moveSelection(-step);
           e.preventDefault();
           break;
         case "PageDown":
-          store.moveSelection(10);
+          store.moveSelection(10 * step);
           e.preventDefault();
           break;
         case "PageUp":
-          store.moveSelection(-10);
+          store.moveSelection(-10 * step);
           e.preventDefault();
           break;
         case "Home":

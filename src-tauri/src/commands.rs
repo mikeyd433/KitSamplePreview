@@ -242,7 +242,15 @@ pub fn get_settings(state: State<'_, AppState>) -> CmdResult<serde_json::Value> 
         .map_err(to_msg)?
         .and_then(|v| v.parse::<i64>().ok())
         .unwrap_or(scan::DEFAULT_MAX_DURATION_MS);
-    Ok(serde_json::json!({ "scanMaxDurationMs": max_duration }))
+    // SPEC §7.9 keeps settings in the database rather than localStorage, so the
+    // view survives a reinstall along with everything else.
+    let view_mode = db::get_setting(&conn, "view.mode")
+        .map_err(to_msg)?
+        .unwrap_or_else(|| "list".to_string());
+    Ok(serde_json::json!({
+        "scanMaxDurationMs": max_duration,
+        "viewMode": view_mode,
+    }))
 }
 
 #[tauri::command]

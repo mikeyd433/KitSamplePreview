@@ -117,6 +117,18 @@ export const setTags = (sampleId: number, tags: string[]): Promise<void> =>
 
 export const listTags = (): Promise<TagCount[]> => invoke<TagCount[]>("list_tags");
 
+export type ViewMode = "list" | "tiles";
+
+export interface Settings {
+  scanMaxDurationMs: number;
+  viewMode: ViewMode;
+}
+
+export const getSettings = (): Promise<Settings> => invoke<Settings>("get_settings");
+
+export const setSetting = (key: string, value: string): Promise<void> =>
+  invoke<void>("set_setting", { key, value });
+
 export function errorText(e: unknown): string {
   if (typeof e === "string") return e;
   if (e instanceof Error) return e.message;

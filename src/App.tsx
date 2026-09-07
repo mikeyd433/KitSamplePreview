@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 
 import { RootsPanel } from "./components/RootsPanel";
 import { SampleList } from "./components/SampleList";
+import { SampleTiles } from "./components/SampleTiles";
 import { StatusBar } from "./components/StatusBar";
 import { useGlobalKeyboard } from "./keyboard/useGlobalKeyboard";
 import { useLibrary } from "./stores/library";
@@ -15,13 +16,17 @@ export function App(): React.JSX.Element {
   const setText = useLibrary((s) => s.setText);
   const refreshRoots = useLibrary((s) => s.refreshRoots);
   const runQuery = useLibrary((s) => s.runQuery);
+  const viewMode = useLibrary((s) => s.viewMode);
+  const setViewMode = useLibrary((s) => s.setViewMode);
+  const loadSettings = useLibrary((s) => s.loadSettings);
 
   useGlobalKeyboard(searchRef);
 
   useEffect(() => {
+    void loadSettings();
     void refreshRoots();
     void runQuery();
-  }, [refreshRoots, runQuery]);
+  }, [loadSettings, refreshRoots, runQuery]);
 
   // Scan progress is streamed rather than polled, so a large library keeps the
   // window responsive throughout (SPEC §7.1).
@@ -48,12 +53,30 @@ export function App(): React.JSX.Element {
           placeholder="search — try “808 kick”  ( / to focus, Esc to clear )"
           onChange={(e) => setText(e.target.value)}
         />
-        <span className="hint">↑↓ audition · Space replay</span>
+        <div className="view-toggle" role="group" aria-label="View">
+          {(["list", "tiles"] as const).map((mode) => (
+            <button
+              key={mode}
+              className={viewMode === mode ? "active" : ""}
+              onClick={() => setViewMode(mode)}
+              title={
+                mode === "list"
+                  ? "List — more rows on screen, and ←/→ stay with the folder tree"
+                  : "Tiles — bigger targets; ←/→ move across the grid"
+              }
+            >
+              {mode}
+            </button>
+          ))}
+        </div>
+        <span className="hint">
+          {viewMode === "tiles" ? "↑↓←→ audition" : "↑↓ audition"} · Space replay
+        </span>
       </header>
 
       <div className="main">
         <RootsPanel />
-        <SampleList />
+        {viewMode === "tiles" ? <SampleTiles /> : <SampleList />}
       </div>
 
       <StatusBar />
