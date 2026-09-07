@@ -21,6 +21,9 @@ That is the development loop — it needs a terminal and rebuilds as you edit.
 ### A desktop icon
 
 ```powershell
+cd C:\Users\micha\KitSamplePreview
+git pull
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
 .\scripts\update-kitbench.ps1
 ```
 

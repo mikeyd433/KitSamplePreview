@@ -58,8 +58,10 @@ if (-not $NoPull) {
 Write-Host 'Installing frontend dependencies...' -ForegroundColor Cyan
 npm install --no-audit --no-fund
 
-Write-Host 'Building (this takes a few minutes the first time)...' -ForegroundColor Cyan
-npm run tauri build
+# --no-bundle: we point the shortcut at the executable, so building the NSIS
+# installer would only add a tooling download and another way to fail.
+Write-Host 'Building (several minutes the first time, much less after)...' -ForegroundColor Cyan
+npm run tauri -- build --no-bundle
 
 $exe = Join-Path $repo 'src-tauri\target\release\kitbench.exe'
 if (-not (Test-Path $exe)) {
