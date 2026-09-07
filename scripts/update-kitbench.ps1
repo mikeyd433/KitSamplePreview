@@ -59,26 +59,45 @@ Require-Tool npm   'Install Node 20.19 or newer.'
 Require-Tool cargo 'Install Rust from https://rustup.rs (MSVC toolchain).'
 
 if (-not $NoPull) {
-    # A dirty tree would make the pull fail halfway and leave a confusing
-    # state, so say so first.
+    # A dirty tree stops `git pull --ff-only` dead. This used to be a hard stop
+    # here, on the reasoning that carrying on would rebuild the same commit and
+    # report success. That was right about the danger and wrong about the
+    # remedy: something in this repo dirties src-tauri/Cargo.toml on its own,
+    # so the stop fired on every run and the app's update button could never
+    # succeed -- it has no way to run `git checkout -- .` first.
+    #
+    # So: set the changes aside instead of refusing. A stash is recoverable,
+    # which `git checkout -- .` is not, and it needs nothing from the user.
     $dirty = git status --porcelain
     if ($dirty) {
-        # A stop, not a warning. Carrying on rebuilds the same commit and
-        # reports success, which is indistinguishable from an update that
-        # worked -- and when this runs from the app's button the console closes
-        # on success, so a warning would not even be read.
         Write-Host ''
         Write-Host 'These files differ from the last commit:' -ForegroundColor Yellow
-        Write-Host $dirty -ForegroundColor Yellow
+        Write-Host ($dirty -join [Environment]::NewLine) -ForegroundColor Yellow
+        Write-Host 'Setting them aside so the pull can run.' -ForegroundColor Yellow
+        git stash push --quiet --message "kitbench updater $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+        if ($LASTEXITCODE -ne 0) {
+            throw ('Could not set local changes aside (git stash failed). ' +
+                   'Nothing has changed. Pass -NoPull to rebuild the current code.')
+        }
+        Write-Host 'Stashed -- `git stash list` shows it, `git stash pop` brings it back.' -ForegroundColor Yellow
         Write-Host ''
-        throw ('Cannot update: the pull would overwrite local changes. ' +
-               'If you did not make them, run `git checkout -- .` and try again. ' +
-               'To rebuild the current code without updating, pass -NoPull.')
-    } else {
-        Write-Host 'Pulling...' -ForegroundColor Cyan
-        git pull --ff-only
+    }
+
+    Write-Host 'Pulling...' -ForegroundColor Cyan
+    git pull --ff-only
+    # git does not fail a PowerShell script by itself, and a pull that failed
+    # silently is how this script twice rebuilt stale code and called it an
+    # update.
+    if ($LASTEXITCODE -ne 0) {
+        throw ('The pull failed (exit code ' + $LASTEXITCODE + '). Nothing has changed. ' +
+               'If it mentions untracked files, move or delete the files it names.')
     }
 }
+
+# Whatever the tree looks like from here is the build's doing, not yours. See
+# the check at the end, which is what finally answers "why does Cargo.toml keep
+# coming back modified?".
+$treeBeforeBuild = git status --porcelain
 
 # Windows will not let a running executable be replaced, and the build fails
 # with a bare "Access is denied" that says nothing about why.
@@ -165,14 +184,26 @@ Write-Host "Built $commit$dirtyNow" -ForegroundColor Green
 Write-Host 'The version badge in the status bar should show the same thing.' -ForegroundColor Green
 
 if ($changes) {
-    # Name them. A dirty tree makes the next run skip its pull, so "+" is a
-    # standing hazard rather than a curiosity, and it is not worth a round trip
-    # to find out which files are responsible.
+    # Name them, and say who did it. The tree was recorded just after the pull;
+    # anything dirty now that was clean then was written by the build itself,
+    # which is the answer to why src-tauri/Cargo.toml keeps coming back
+    # modified. The next run stashes it either way, so this is a diagnosis
+    # rather than a chore.
     Write-Host ''
     Write-Warning 'The "+" means these files differ from the last commit:'
-    Write-Host $changes -ForegroundColor Yellow
-    Write-Host 'If you did not edit them, `git checkout -- .` clears it and the next' -ForegroundColor Yellow
-    Write-Host 'update will pull normally.' -ForegroundColor Yellow
+    Write-Host ($changes -join [Environment]::NewLine) -ForegroundColor Yellow
+
+    $before = @($treeBeforeBuild)
+    $newlyDirty = @($changes) | Where-Object { $before -notcontains $_ }
+    if ($newlyDirty) {
+        Write-Host ''
+        Write-Host 'The build wrote these -- they were not modified before it ran:' -ForegroundColor Yellow
+        Write-Host ($newlyDirty -join [Environment]::NewLine) -ForegroundColor Yellow
+        Write-Host 'That is a tool rewriting the repo, not anything you did.' -ForegroundColor Yellow
+    }
+
+    Write-Host ''
+    Write-Host 'Nothing to do about it: the next update sets them aside automatically.' -ForegroundColor Yellow
 }
 Write-Host "Shortcut: $linkPath" -ForegroundColor Green
 
