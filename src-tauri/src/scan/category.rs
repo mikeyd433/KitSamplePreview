@@ -27,7 +27,7 @@ use Pattern::{Contains, Token, Word};
 
 /// Ordered: the first category that matches wins.
 ///
-/// The order carries most of the accuracy, and three placements are deliberate.
+/// The order carries most of the accuracy, and four placements are deliberate.
 ///
 /// fx leads because words like `reverse`, `riser` and `transition` describe
 /// what was done to a sound rather than what made it. A reverse cymbal swell is
@@ -40,7 +40,11 @@ use Pattern::{Contains, Token, Word};
 /// filename, so any earlier placement reclassifies half the library.
 ///
 /// hat precedes cymbal because `HH_foot_splash` is a hi-hat before it is a
-/// splash.
+/// splash. cymbal precedes perc for the mirror-image reason: a `ride bell` is a
+/// ride, which is what lets `bell` sit in perc without stealing it.
+///
+/// vox moves above 808 -- it used to sit below -- because a fallback belongs
+/// after everything specific, and an `808 vocal chop` is a vocal.
 ///
 /// Beyond that this is a heuristic feeding a filter chip, and SPEC §7.1 expects
 /// it to be wrong sometimes -- which is why a wrong answer can be corrected and
@@ -50,21 +54,39 @@ const CATEGORIES: &[(&str, &[Pattern])] = &[
         Token("fx"), Contains("riser"), Contains("impact"), Contains("sweep"),
         Contains("swell"), Contains("reverse"), Word("transition"), Contains("downlifter"),
         Contains("uplifter"), Contains("whoosh"), Word("drone"), Contains("ambience"),
+        Contains("ambient"), Contains("atmos"), Contains("foley"), Contains("siren"),
+        Contains("glitch"), Contains("stinger"), Word("braam"),
     ]),
-    ("kick", &[Contains("kick"), Token("bd"), Contains("bassdrum"), Contains("bass drum")]),
-    ("snare", &[Contains("snare"), Token("sd"), Contains("rimshot"), Word("rim")]),
-    ("clap", &[Contains("clap"), Token("cp")]),
-    ("hat", &[Contains("hihat"), Contains("hat"), Token("hh")]),
-    ("tom", &[Word("tom"), Contains("floor tom")]),
+    ("kick", &[
+        Contains("kick"), Contains("kik"), Token("bd"), Token("bd1"), Token("bd2"),
+        Contains("bassdrum"), Contains("bass drum"),
+    ]),
+    ("snare", &[
+        Contains("snare"), Token("sd"), Token("sn"), Token("snr"), Contains("rimshot"),
+        Word("rim"), Contains("sidestick"), Contains("side stick"), Contains("cross stick"),
+        Contains("crossstick"),
+    ]),
+    ("clap", &[Contains("clap"), Contains("snap"), Token("cp"), Token("clp")]),
+    ("hat", &[Contains("hihat"), Contains("hat"), Token("hh"), Token("chh"), Token("phh")]),
+    ("tom", &[Word("tom"), Contains("floor tom"), Contains("rototom"), Word("timpani")]),
     ("cymbal", &[
-        Contains("cymbal"), Contains("crash"), Word("ride"), Word("china"),
-        Contains("splash"), Word("gong"),
+        Contains("cymbal"), Token("cym"), Contains("crash"), Word("ride"), Word("china"),
+        Contains("splash"), Word("gong"), Contains("sizzle"),
     ]),
     ("perc", &[
         Contains("perc"), Contains("shaker"), Contains("tamb"), Contains("conga"),
         Contains("bongo"), Contains("cowbell"), Contains("clave"), Word("block"),
         Contains("triangle"), Contains("agogo"), Contains("cabasa"), Contains("guiro"),
-        Word("stick"), Word("woodblock"), Contains("castanet"),
+        Word("stick"), Word("woodblock"), Contains("castanet"), Contains("djembe"),
+        Contains("tabla"), Contains("cajon"), Contains("timbale"), Contains("taiko"),
+        Word("udu"), Word("bell"), Contains("chime"), Contains("rattle"),
+        Contains("maraca"), Contains("whistle"), Contains("vibraslap"), Contains("shekere"),
+        Contains("darbuka"), Contains("dholak"), Contains("handdrum"), Contains("hand drum"),
+    ]),
+    ("vox", &[
+        Word("vox"), Contains("vocal"), Word("voice"), Contains("adlib"), Contains("ad lib"),
+        Word("chant"), Contains("phrase"), Contains("acapella"), Contains("accapella"),
+        Word("shout"), Word("yell"), Word("scream"),
     ]),
     // Last, as a fallback: an 808 is whatever was not identifiable as a
     // specific drum. Trap packs put "808" in nearly every filename, so placing
@@ -75,12 +97,19 @@ const CATEGORIES: &[(&str, &[Pattern])] = &[
     // folder of them and an 808 is played as a bass line as often as a kick. A
     // deviation from SPEC §7.3's chip list, which predates seeing a real
     // library.
-    ("808", &[Word("808"), Contains("sub bass")]),
-    ("vox", &[
-        Word("vox"), Contains("vocal"), Word("voice"), Contains("adlib"), Contains("ad lib"),
-        Word("chant"), Contains("phrase"),
-    ]),
+    //
+    // `sub` joins it here for the same reason and with the same safety: by the
+    // time this rule is reached, nothing more specific has claimed the name.
+    ("808", &[Word("808"), Contains("sub bass"), Word("sub"), Word("subs")]),
 ];
+
+// Deliberately absent: `oh`, `ohh` and `ch`. They are how a Roland-derived pack
+// writes "open hat" and "closed hat", and they are equally how a trap pack
+// names a vocal ad-lib -- and unlike `HH_foot_splash`, where the abbreviation
+// is plainly the subject and `splash` the modifier, there is nothing in the
+// name to break the tie. Two letters are not enough to guess with, and an
+// uncategorised hat costs one click where a vocal filed under "hat" costs
+// finding it first. Revisit with real filenames, not with reasoning.
 
 fn matches(text: &str, patterns: &[Pattern]) -> bool {
     patterns.iter().any(|pattern| match pattern {
@@ -119,7 +148,7 @@ pub fn infer(filename_text: &str, full_text: &str) -> Option<String> {
 /// filed under, so improved rules reach existing rows. Without it the only way
 /// to benefit would be a full rescan, which re-reads every byte of every file
 /// to recompute waveforms that have not changed.
-pub const RULES_VERSION: i64 = 2;
+pub const RULES_VERSION: i64 = 3;
 
 /// Re-files every sample whose category is still a guess.
 ///
@@ -200,9 +229,10 @@ mod tests {
     fn short_codes_match_whole_tokens_only() {
         // The reason `bd`, `sd`, `hh` and `cp` are tokens and not substrings.
         // Each of these contains the letters and means nothing of the sort.
-        assert_eq!(infer_path("sidestick.wav"), None);
+        assert_eq!(infer_path("misdirection.wav"), None);
         assert_eq!(infer_path("bdrum_like_name.wav"), None);
         assert_eq!(infer_path("cposition.wav"), None);
+        assert_eq!(infer_path("snowfall.wav"), None);
         // And the codes still work when they are genuinely their own word.
         assert_eq!(infer_path("BD_01.wav").as_deref(), Some("kick"));
         assert_eq!(infer_path("SD-02.wav").as_deref(), Some("snare"));
@@ -347,6 +377,118 @@ mod tests {
         assert_eq!(category(1).as_deref(), Some("snare"), "Rims now files as snare");
         assert_eq!(category(2).as_deref(), Some("808"), "a stale guess is revised");
         assert_eq!(category(3).as_deref(), Some("perc"), "the correction is untouched");
+    }
+
+    /// The abbreviations drum-machine-derived packs actually ship. These are
+    /// the names that leave a library looking half-uncategorised: a folder of
+    /// `BD`/`SD`/`CP` reads as noise to anything matching spelled-out words.
+    #[test]
+    fn recognises_drum_machine_abbreviations() {
+        for (path, expected) in [
+            ("BD1.wav", "kick"),
+            ("KIK_hard.wav", "kick"),
+            ("SN_rimmy.wav", "snare"),
+            ("SNR_tight.wav", "snare"),
+            ("CLP_room.wav", "clap"),
+            ("CHH_tight.wav", "hat"),
+            ("PHH_pedal.wav", "hat"),
+            ("CYM_dark.wav", "cymbal"),
+        ] {
+            assert_eq!(infer_path(path).as_deref(), Some(expected), "path: {path}");
+        }
+    }
+
+    /// `oh`, `ohh` and `ch` are left out on purpose; see the note under
+    /// `CATEGORIES`. A vocal keeps its own name, and the hat stays
+    /// uncategorised rather than being guessed at from two letters.
+    #[test]
+    fn the_vocal_ambiguous_abbreviations_are_not_guessed() {
+        assert_eq!(infer_path("OH_long.wav"), None);
+        assert_eq!(infer_path("Ohh.wav"), None);
+        assert_eq!(infer_path("CH_01.wav"), None);
+        // Spelled out, or in a folder that spells it out, they file fine.
+        assert_eq!(infer_path("open hat long.wav").as_deref(), Some("hat"));
+        assert_eq!(infer_path(r"4. OPEN HAT\OH_long.wav").as_deref(), Some("hat"));
+        assert_eq!(infer_path(r"8. VOX\Oh.wav").as_deref(), Some("vox"));
+    }
+
+    /// Hand percussion by name. Packs that sample real kits label these
+    /// precisely, and every one of them was previously uncategorised.
+    #[test]
+    fn recognises_hand_percussion_by_name() {
+        for name in [
+            "djembe_slap.wav", "tabla_na.wav", "cajon_bass.wav", "timbale_high.wav",
+            "taiko_hit.wav", "udu_low.wav", "chime_roll.wav", "rattle_short.wav",
+            "maraca_shake.wav", "whistle_long.wav", "vibraslap.wav", "darbuka_dum.wav",
+            "hand drum 02.wav", "Bell.wav",
+        ] {
+            assert_eq!(infer_path(name).as_deref(), Some("perc"), "name: {name}");
+        }
+    }
+
+    /// `bell` lives in perc, and a ride bell is still a ride. cymbal being
+    /// checked first is what keeps both true at once.
+    #[test]
+    fn a_ride_bell_stays_a_cymbal() {
+        assert_eq!(infer_path("RIDE_bell.wav").as_deref(), Some("cymbal"));
+        assert_eq!(infer_path("ride bell soft.wav").as_deref(), Some("cymbal"));
+        assert_eq!(infer_path("Cowbell.wav").as_deref(), Some("perc"));
+        assert_eq!(infer_path("Bell Tree.wav").as_deref(), Some("perc"));
+    }
+
+    /// A sidestick and a cross stick are snare techniques. `stick` on its own
+    /// is a percussion pack's claves-and-sticks folder and stays in perc --
+    /// snare being checked first is what separates them.
+    #[test]
+    fn stick_names_split_between_snare_and_perc() {
+        assert_eq!(infer_path("sidestick.wav").as_deref(), Some("snare"));
+        assert_eq!(infer_path("side stick soft.wav").as_deref(), Some("snare"));
+        assert_eq!(infer_path("cross stick.wav").as_deref(), Some("snare"));
+        assert_eq!(infer_path(r"- Sticks\03.wav").as_deref(), Some("perc"));
+    }
+
+    /// `sub` shares 808's position and its reasoning: it is only reached when
+    /// nothing more specific has claimed the name.
+    #[test]
+    fn sub_is_an_808_only_when_nothing_else_fits() {
+        assert_eq!(infer_path("Sub 01.wav").as_deref(), Some("808"));
+        assert_eq!(infer_path("SubBass_deep.wav").as_deref(), Some("808"));
+        assert_eq!(infer_path("Subs.wav").as_deref(), Some("808"));
+        // A kick with sub in the name is a kick.
+        assert_eq!(infer_path("Kick Sub Heavy.wav").as_deref(), Some("kick"));
+        // And a longer word that merely starts with the letters is not an 808.
+        assert_eq!(infer_path("subtle take.wav"), None);
+    }
+
+    /// vox above 808: a vocal chop named after the bassline under it is still
+    /// a vocal. This is the one ordering change to an existing pair.
+    #[test]
+    fn a_vocal_named_after_an_808_is_a_vocal() {
+        assert_eq!(infer_path("808 vocal chop.wav").as_deref(), Some("vox"));
+        assert_eq!(infer_path(r"8. VOX\808 chant.wav").as_deref(), Some("vox"));
+        // The fallback still catches what nothing else claims.
+        assert_eq!(infer_path("Deep 808.wav").as_deref(), Some("808"));
+    }
+
+    /// Snaps ship in the claps folder and get played off the same pad.
+    #[test]
+    fn snaps_file_with_claps() {
+        assert_eq!(infer_path("Finger Snap.wav").as_deref(), Some("clap"));
+        assert_eq!(infer_path(r"Claps & Snaps\05.wav").as_deref(), Some("clap"));
+        // But a snappy snare is a snare.
+        assert_eq!(infer_path("snare_snappy.wav").as_deref(), Some("snare"));
+    }
+
+    /// The processing words that were missing. Same reasoning as the existing
+    /// fx entries: these name what was done, not what made the sound.
+    #[test]
+    fn recognises_more_processing_words() {
+        for name in [
+            "foley_door.wav", "siren_up.wav", "glitch_02.wav", "atmos_bed.wav",
+            "ambient_wash.wav", "stinger_short.wav",
+        ] {
+            assert_eq!(infer_path(name).as_deref(), Some("fx"), "name: {name}");
+        }
     }
 
     #[test]
