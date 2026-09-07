@@ -40,21 +40,22 @@ export function useGlobalKeyboard(searchRef: React.RefObject<HTMLInputElement | 
       // early so the later keys inherit it.
       if (typing) return;
 
-      // In tile view a vertical press moves a whole row and the horizontal
-      // keys move within one. In list view the horizontal keys stay reserved
-      // for the folder tree, exactly as SPEC §7.2 assigns them.
-      const tiles = store.viewMode === "tiles";
-      const step = tiles ? Math.max(1, store.columns) : 1;
+      // Horizontal keys always move one sample; vertical keys move one row,
+      // which is one sample in the list and a full row of them in the grid.
+      //
+      // SPEC §7.2 reserved left/right for folder-tree collapse/expand. Dropped
+      // at the developer's request: the tree keeps its click twisties, and
+      // freeing the keys makes one keymap work in both views instead of two
+      // that diverge.
+      const step = store.viewMode === "tiles" ? Math.max(1, store.columns) : 1;
 
       switch (e.key) {
         case "ArrowLeft":
-          if (!tiles) break;
           void unlock();
           store.moveSelection(-1);
           e.preventDefault();
           break;
         case "ArrowRight":
-          if (!tiles) break;
           void unlock();
           store.moveSelection(1);
           e.preventDefault();

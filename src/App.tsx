@@ -61,17 +61,15 @@ export function App(): React.JSX.Element {
               onClick={() => setViewMode(mode)}
               title={
                 mode === "list"
-                  ? "List — more rows on screen, and ←/→ stay with the folder tree"
-                  : "Tiles — bigger targets; ←/→ move across the grid"
+                  ? "List — more rows on screen, and the format columns to scan down"
+                  : "Tiles — bigger targets, and room for a waveform"
               }
             >
               {mode}
             </button>
           ))}
         </div>
-        <span className="hint">
-          {viewMode === "tiles" ? "↑↓←→ audition" : "↑↓ audition"} · Space replay
-        </span>
+        <span className="hint">↑↓←→ audition · Space replay</span>
       </header>
 
       <div className="main">

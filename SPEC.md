@@ -243,9 +243,9 @@ The list is virtualized and keyboard-first:
 
 | Key | Action |
 |---|---|
-| `↑` / `↓` | Move selection — **plays the newly selected sample immediately** |
+| `↑` / `↓` | Move selection by one row — **plays the newly selected sample immediately**. In the tile view a row is a row of the grid |
 | `Space` | Replay current selection |
-| `←` / `→` | Collapse / expand folder tree node |
+| `←` / `→` | Move selection by one sample — in the tile view that is one across the grid |
 | `Enter` | Add selection to the next empty kit slot |
 | `1234` / `QWER` / `ASDF` / `ZXCV` | Assign selection to kit slot 1–16 — the key block is physically a 4×4 grid, matching the tray |
 | `/` | Focus search |
