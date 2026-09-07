@@ -6,7 +6,9 @@ import { useLibrary } from "../stores/library";
  * The categories are filename-guessed and sometimes wrong (§7.1) — these exist
  * to cut 2,000 files down to a workable handful, not to be a taxonomy.
  */
-const CATEGORIES = ["kick", "snare", "hat", "clap", "tom", "perc", "cymbal", "fx"] as const;
+const CATEGORIES = [
+  "kick", "snare", "hat", "clap", "tom", "perc", "cymbal", "808", "vox", "fx",
+] as const;
 
 export function CategoryChips(): React.JSX.Element {
   const category = useLibrary((s) => s.category);

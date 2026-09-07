@@ -39,6 +39,32 @@ pub fn run() {
                 }
             }
 
+            // Re-file guesses when the inference rules have changed since this
+            // library was last scanned. Costs one pass over the index and no
+            // disk reads, which is why it can run unprompted -- the alternative
+            // is asking for a full rescan that re-analyses every file to
+            // recompute waveforms that have not moved.
+            let mut conn = conn;
+            let filed_under: i64 = db::get_setting(&conn, "category.rulesVersion")?
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0);
+            if filed_under != scan::category::RULES_VERSION {
+                match scan::category::reinfer_all(&mut conn) {
+                    Ok(changed) => {
+                        eprintln!("re-filed {changed} samples under category rules v{}",
+                                  scan::category::RULES_VERSION);
+                        db::set_setting(
+                            &conn,
+                            "category.rulesVersion",
+                            &scan::category::RULES_VERSION.to_string(),
+                        )?;
+                    }
+                    // A failure here must not stop the app opening; the
+                    // categories simply stay as they were.
+                    Err(e) => eprintln!("could not re-file categories: {e}"),
+                }
+            }
+
             app.manage(commands::AppState::new(conn));
             Ok(())
         })
@@ -53,6 +79,8 @@ pub fn run() {
             commands::resolve_playable,
             commands::set_tags,
             commands::list_tags,
+            commands::category_counts,
+            commands::set_category,
             commands::get_settings,
             commands::set_setting,
             commands::list_kits,

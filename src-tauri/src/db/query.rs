@@ -9,6 +9,10 @@ use serde::{Deserialize, Serialize};
 
 use super::{now_secs, DbError};
 
+/// The sentinel the UI sends to mean "category IS NULL". Not a real category,
+/// so it cannot collide with one.
+pub const UNCATEGORISED: &str = "\u{0}uncategorised";
+
 // ---------------------------------------------------------------------------
 // Roots
 // ---------------------------------------------------------------------------
@@ -198,9 +202,14 @@ pub fn upsert_sample(conn: &Connection, s: &SampleUpsert) -> Result<(), DbError>
              true_peak_db = COALESCE(excluded.true_peak_db, sample.true_peak_db),
              body_rms_db = COALESCE(excluded.body_rms_db, sample.body_rms_db),
              peaks = COALESCE(excluded.peaks, sample.peaks),
-             -- A user override survives a rescan: inference only ever fills a
-             -- category in, it never replaces one that is already set (§7.1).
-             category = COALESCE(sample.category, excluded.category),
+             -- A correction survives a rescan; a guess does not. Inference is
+             -- free to revise its own answers -- which is what lets improved
+             -- patterns reach rows that were scanned under the old ones -- but
+             -- it must never overwrite something the user set (§7.1).
+             category = CASE
+                 WHEN sample.category_user_set = 1 THEN sample.category
+                 ELSE excluded.category
+             END,
              removed_at = NULL,
              scanned_at = excluded.scanned_at",
         params![
@@ -345,9 +354,13 @@ fn where_clause(q: &SampleQuery) -> (String, Vec<Box<dyn rusqlite::ToSql>>) {
             clauses.push(format!("s.search_text LIKE ?{} ESCAPE '\\'", binds.len()));
         }
     }
-    if let Some(category) = q.category.as_deref().filter(|c| !c.is_empty()) {
-        binds.push(Box::new(category.to_string()));
-        clauses.push(format!("s.category = ?{}", binds.len()));
+    if let Some(category) = q.category.as_deref() {
+        if category == UNCATEGORISED {
+            clauses.push("s.category IS NULL".into());
+        } else if !category.is_empty() {
+            binds.push(Box::new(category.to_string()));
+            clauses.push(format!("s.category = ?{}", binds.len()));
+        }
     }
     if let Some(min) = q.min_duration_ms {
         binds.push(Box::new(min));
@@ -459,6 +472,73 @@ pub fn folder_tree(conn: &Connection, root_id: Option<i64>) -> Result<Vec<Folder
         None => stmt.query_map([], map)?.collect::<Result<Vec<_>, _>>()?,
     };
     Ok(rows)
+}
+
+// ---------------------------------------------------------------------------
+// Categories
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CategoryCount {
+    /// None is the uncategorised bucket, which has to be reachable: it is where
+    /// everything the guess could not place ends up, and therefore the only
+    /// place a correction can start.
+    pub category: Option<String>,
+    pub sample_count: i64,
+}
+
+pub fn category_counts(conn: &Connection) -> Result<Vec<CategoryCount>, DbError> {
+    let mut stmt = conn.prepare(
+        "SELECT category, COUNT(*) FROM sample
+          WHERE removed_at IS NULL
+          GROUP BY category
+          ORDER BY category IS NULL, category COLLATE NOCASE",
+    )?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(CategoryCount { category: row.get(0)?, sample_count: row.get(1)? })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// Sets the category on a batch of samples, and marks it as the user's answer.
+///
+/// Takes a list rather than one id so that correcting a whole folder at once is
+/// the same operation as correcting one sample. With packs that name the same
+/// drum three different ways, fixing them individually is not realistic.
+pub fn set_category(
+    conn: &mut Connection,
+    ids: &[i64],
+    category: Option<&str>,
+) -> Result<usize, DbError> {
+    let tx = conn.transaction()?;
+    let mut changed = 0;
+    {
+        let mut stmt = tx.prepare(
+            "UPDATE sample SET category = ?1, category_user_set = 1 WHERE id = ?2",
+        )?;
+        for id in ids {
+            changed += stmt.execute(params![category, id])?;
+        }
+    }
+    tx.commit()?;
+    Ok(changed)
+}
+
+/// Hands a category back to inference, discarding the override.
+pub fn clear_category_override(conn: &mut Connection, ids: &[i64]) -> Result<usize, DbError> {
+    let tx = conn.transaction()?;
+    let mut changed = 0;
+    {
+        let mut stmt = tx.prepare("UPDATE sample SET category_user_set = 0 WHERE id = ?1")?;
+        for id in ids {
+            changed += stmt.execute(params![id])?;
+        }
+    }
+    tx.commit()?;
+    Ok(changed)
 }
 
 // ---------------------------------------------------------------------------

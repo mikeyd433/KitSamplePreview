@@ -388,6 +388,31 @@ pub fn set_tags(state: State<'_, AppState>, sample_id: i64, tags: Vec<String>) -
 }
 
 #[tauri::command]
+pub fn category_counts(state: State<'_, AppState>) -> CmdResult<Vec<db::CategoryCount>> {
+    let conn = state.db.lock().map_err(to_msg)?;
+    db::category_counts(&conn).map_err(to_msg)
+}
+
+/// Corrects the category on one sample or a whole selection.
+///
+/// `category: None` files them as uncategorised; `clear` hands them back to
+/// inference instead, so a bad correction is undoable without guessing what the
+/// guess would have been.
+#[tauri::command]
+pub fn set_category(
+    state: State<'_, AppState>,
+    ids: Vec<i64>,
+    category: Option<String>,
+    clear: bool,
+) -> CmdResult<usize> {
+    let mut conn = state.db.lock().map_err(to_msg)?;
+    if clear {
+        return db::clear_category_override(&mut conn, &ids).map_err(to_msg);
+    }
+    db::set_category(&mut conn, &ids, category.as_deref()).map_err(to_msg)
+}
+
+#[tauri::command]
 pub fn list_tags(state: State<'_, AppState>) -> CmdResult<Vec<db::TagCount>> {
     let conn = state.db.lock().map_err(to_msg)?;
     db::list_tags(&conn).map_err(to_msg)

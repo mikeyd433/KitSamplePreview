@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { useLibrary } from "../stores/library";
+import { UNCATEGORISED } from "../ipc/commands";
 import type { FolderNode } from "../ipc/commands";
 
 /**
@@ -20,6 +21,9 @@ export function RootsPanel(): React.JSX.Element {
   const removeRoot = useLibrary((s) => s.removeRoot);
   const setRoot = useLibrary((s) => s.setRoot);
   const setSubtree = useLibrary((s) => s.setSubtree);
+
+  const groupBy = useLibrary((s) => s.groupBy);
+  const setGroupBy = useLibrary((s) => s.setGroupBy);
 
   const [draft, setDraft] = useState("");
 
@@ -86,7 +90,27 @@ export function RootsPanel(): React.JSX.Element {
 
       <TagFilter />
 
-      {folders.length > 0 && (
+      <h2>BROWSE</h2>
+      <div className="group-toggle" role="group" aria-label="Group by">
+        {(["folder", "type"] as const).map((mode) => (
+          <button
+            key={mode}
+            className={groupBy === mode ? "active" : ""}
+            onClick={() => setGroupBy(mode)}
+            title={
+              mode === "folder"
+                ? "The folders on disk, as each pack organises them"
+                : "What kind of drum it is, across every pack at once"
+            }
+          >
+            by {mode}
+          </button>
+        ))}
+      </div>
+
+      {groupBy === "type" && <TypeTree />}
+
+      {groupBy === "folder" && folders.length > 0 && (
         <>
           <h2>FOLDERS</h2>
           <FolderTree
@@ -97,6 +121,46 @@ export function RootsPanel(): React.JSX.Element {
         </>
       )}
     </aside>
+  );
+}
+
+/**
+ * The library grouped by what kind of drum something is, not where it sits.
+ *
+ * This is the answer to three packs each naming the same drum differently:
+ * "1. KICK", "Kicks" and "-Kick Textures" are one entry here. Nothing moves on
+ * disk -- SPEC §2 rules that out, and it would be the wrong tool for it anyway.
+ *
+ * Uncategorised is listed deliberately rather than hidden. It is where every
+ * failed guess lands, so it is the only place a correction can start.
+ */
+function TypeTree(): React.JSX.Element {
+  const categories = useLibrary((s) => s.categories);
+  const category = useLibrary((s) => s.category);
+  const setCategory = useLibrary((s) => s.setCategory);
+
+  if (categories.length === 0) {
+    return <p className="dim tree-empty">Nothing scanned yet.</p>;
+  }
+
+  return (
+    <ul className="root-list">
+      {categories.map((entry) => {
+        const value = entry.category ?? UNCATEGORISED;
+        const label = entry.category ?? "uncategorised";
+        return (
+          <li key={value}>
+            <button
+              className={`root${category === value ? " active" : ""}${entry.category === null ? " muted" : ""}`}
+              onClick={() => setCategory(category === value ? null : value)}
+            >
+              {label}
+              <span className="count">{entry.sampleCount}</span>
+            </button>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 

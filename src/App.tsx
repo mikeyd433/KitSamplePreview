@@ -8,6 +8,7 @@ import { StatusBar } from "./components/StatusBar";
 import { Inspector } from "./components/Inspector";
 import { CategoryChips } from "./components/CategoryChips";
 import { ScopeBar } from "./components/ScopeBar";
+import { Recategorize } from "./components/Recategorize";
 import { KitTray } from "./components/KitTray";
 import { useGlobalKeyboard } from "./keyboard/useGlobalKeyboard";
 import { useLibrary } from "./stores/library";
@@ -61,6 +62,7 @@ export function App(): React.JSX.Element {
         />
         <ScopeBar />
         <CategoryChips />
+        <Recategorize />
         <div className="view-toggle" role="group" aria-label="View">
           {(["list", "tiles"] as const).map((mode) => (
             <button

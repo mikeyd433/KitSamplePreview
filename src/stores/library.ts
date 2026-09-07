@@ -10,7 +10,7 @@ import { create } from "zustand";
 
 import * as ipc from "../ipc/commands";
 import type {
-  FolderNode, LibraryRoot, SampleDetail, SampleRow, TagCount, ViewMode,
+  CategoryCount, FolderNode, LibraryRoot, SampleDetail, SampleRow, TagCount, ViewMode,
 } from "../ipc/commands";
 import { DEFAULT_NORMALIZE, previewGainDb, type NormalizeMode, type NormalizeSettings } from "../audio/gain";
 import { prefetch } from "../audio/bufferCache";
@@ -55,6 +55,9 @@ interface LibraryState {
   tagFilter: string[];
 
   tags: TagCount[];
+  categories: CategoryCount[];
+  /** Browse the sidebar by disk folder, or by what kind of drum it is. */
+  groupBy: "folder" | "type";
   normalize: NormalizeSettings;
   /** Tags and anything else the list row does not carry, for the inspector. */
   detail: SampleDetail | null;
@@ -86,6 +89,10 @@ interface LibraryState {
   setColumns: (columns: number) => void;
 
   setCategory: (category: string | null) => void;
+  setGroupBy: (groupBy: "folder" | "type") => void;
+  refreshCategories: () => Promise<void>;
+  /** Correct the guess for every sample currently listed. */
+  recategorizeVisible: (category: string | null, clear?: boolean) => Promise<void>;
   toggleTagFilter: (tag: string) => void;
   setNormalizeMode: (mode: NormalizeMode) => void;
   setNormalizeTarget: (mode: "peak" | "body", db: number) => void;
@@ -119,6 +126,8 @@ export const useLibrary = create<LibraryState>((set, get) => ({
   tagFilter: [],
 
   tags: [],
+  categories: [],
+  groupBy: "folder",
   normalize: DEFAULT_NORMALIZE,
   detail: null,
 
@@ -240,6 +249,34 @@ export const useLibrary = create<LibraryState>((set, get) => ({
     }));
     const key = mode === "peak" ? "preview.targetPeakDb" : "preview.targetRmsDb";
     void ipc.setSetting(key, String(db)).catch(() => undefined);
+  },
+
+  setGroupBy: (groupBy) => {
+    // Switching how you browse should not leave the other axis filtering
+    // invisibly: by type, a folder filter is exactly the thing you cannot see.
+    set({ groupBy, subtree: null, category: null });
+    void get().refreshCategories();
+    void get().runQuery();
+  },
+
+  refreshCategories: async () => {
+    try {
+      set({ categories: await ipc.categoryCounts() });
+    } catch {
+      /* the sidebar counts are not worth an error banner */
+    }
+  },
+
+  recategorizeVisible: async (category, clear = false) => {
+    const ids = get().rows.map((row) => row.id);
+    if (ids.length === 0) return;
+    try {
+      await ipc.setCategory(ids, category, clear);
+      await get().refreshCategories();
+      await get().runQuery();
+    } catch (e) {
+      set({ error: ipc.errorText(e) });
+    }
   },
 
   refreshTags: async () => {

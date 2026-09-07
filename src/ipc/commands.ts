@@ -77,6 +77,23 @@ export interface Playable {
   transcoded: boolean;
 }
 
+/** Sentinel meaning "category IS NULL"; must match the Rust constant. */
+export const UNCATEGORISED = "\u0000uncategorised";
+
+export interface CategoryCount {
+  category: string | null;
+  sampleCount: number;
+}
+
+export const categoryCounts = (): Promise<CategoryCount[]> =>
+  invoke<CategoryCount[]>("category_counts");
+
+export const setCategory = (
+  ids: number[],
+  category: string | null,
+  clear = false,
+): Promise<number> => invoke<number>("set_category", { ids, category, clear });
+
 export interface TagCount {
   name: string;
   sampleCount: number;

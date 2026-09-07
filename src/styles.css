@@ -453,3 +453,28 @@ button:disabled { opacity: 0.4; cursor: default; }
 }
 
 .update-btn { font-size: 11px; }
+
+/* --- browse mode + recategorise --- */
+
+.group-toggle { display: flex; margin-bottom: 8px; }
+.group-toggle button {
+  flex: 1 1 0; border-radius: 0; border-right-width: 0; color: var(--dim); font-size: 11px;
+}
+.group-toggle button:first-child { border-radius: 4px 0 0 4px; }
+.group-toggle button:last-child { border-radius: 0 4px 4px 0; border-right-width: 1px; }
+.group-toggle button.active { color: var(--accent); background: var(--sel); }
+
+.root.muted { color: var(--dim); font-style: italic; }
+.tree-empty { padding: 4px 6px; }
+
+.recat { position: relative; flex: none; }
+.recat > button { font-size: 11px; }
+.recat-menu {
+  position: absolute; top: calc(100% + 4px); left: 0; z-index: 30;
+  display: grid; grid-template-columns: repeat(2, minmax(96px, 1fr)); gap: 3px;
+  padding: 6px; border-radius: 6px;
+  background: var(--panel-2); border: 1px solid var(--line);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+}
+.recat-menu button { font-size: 11px; }
+.recat-reset { grid-column: 1 / -1; color: var(--dim); }

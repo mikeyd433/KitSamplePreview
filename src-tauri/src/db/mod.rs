@@ -21,7 +21,7 @@ pub enum DbError {
 /// Bumped whenever `schema.sql` changes shape. Phase 1 ships version 1; the
 /// FTS5 table SPEC §4 defers is an additive migration to version 2 that needs
 /// no re-scan, because `search_text` is already populated.
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
 
 pub fn open(path: &Path) -> Result<Connection, DbError> {
     if let Some(parent) = path.parent() {
@@ -52,12 +52,23 @@ fn configure(conn: &Connection) -> Result<(), DbError> {
 }
 
 fn migrate(conn: &Connection) -> Result<(), DbError> {
-    let current: i64 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    let mut current: i64 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
+
     if current == 0 {
         conn.execute_batch(include_str!("schema.sql"))?;
-        conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+        current = SCHEMA_VERSION;
     }
-    // Future versions land here as ordered, additive steps.
+
+    // Ordered, additive steps. Each one must leave an existing library intact:
+    // a rescan is cheap, but re-tagging and rebuilding kits by hand is not.
+    if current < 2 {
+        conn.execute_batch(
+            "ALTER TABLE sample ADD COLUMN category_user_set INTEGER NOT NULL DEFAULT 0",
+        )?;
+        current = 2;
+    }
+
+    conn.pragma_update(None, "user_version", current)?;
     Ok(())
 }
 

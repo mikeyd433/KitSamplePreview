@@ -29,7 +29,11 @@ CREATE TABLE IF NOT EXISTS sample (
   true_peak_db REAL,                  -- Phase 2
   body_rms_db  REAL,                  -- Phase 2, RMS of the loudest 300ms window
   peaks        BLOB,                  -- Phase 2, 400 min/max i8 pairs
-  category     TEXT,                  -- Phase 2, inferred, user-overridable
+  category     TEXT,                  -- inferred, user-overridable
+  -- 1 when the user set the category by hand. Inference refreshes its own
+  -- guesses on a rescan but must never overwrite a correction, and without
+  -- this flag the two are indistinguishable.
+  category_user_set INTEGER NOT NULL DEFAULT 0,
   search_text  TEXT NOT NULL,         -- normalised; see search.rs
   -- Set when a scan no longer finds the file. Rows are marked, never deleted,
   -- so a kit slot pointing at it can say "missing" instead of silently emptying
