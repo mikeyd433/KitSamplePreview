@@ -5,6 +5,8 @@ import { RootsPanel } from "./components/RootsPanel";
 import { SampleList } from "./components/SampleList";
 import { SampleTiles } from "./components/SampleTiles";
 import { StatusBar } from "./components/StatusBar";
+import { Inspector } from "./components/Inspector";
+import { CategoryChips } from "./components/CategoryChips";
 import { useGlobalKeyboard } from "./keyboard/useGlobalKeyboard";
 import { useLibrary } from "./stores/library";
 import { unlock } from "./audio/engine";
@@ -19,14 +21,16 @@ export function App(): React.JSX.Element {
   const viewMode = useLibrary((s) => s.viewMode);
   const setViewMode = useLibrary((s) => s.setViewMode);
   const loadSettings = useLibrary((s) => s.loadSettings);
+  const refreshTags = useLibrary((s) => s.refreshTags);
 
   useGlobalKeyboard(searchRef);
 
   useEffect(() => {
     void loadSettings();
     void refreshRoots();
+    void refreshTags();
     void runQuery();
-  }, [loadSettings, refreshRoots, runQuery]);
+  }, [loadSettings, refreshRoots, refreshTags, runQuery]);
 
   // Scan progress is streamed rather than polled, so a large library keeps the
   // window responsive throughout (SPEC §7.1).
@@ -53,6 +57,7 @@ export function App(): React.JSX.Element {
           placeholder="search — try “808 kick”  ( / to focus, Esc to clear )"
           onChange={(e) => setText(e.target.value)}
         />
+        <CategoryChips />
         <div className="view-toggle" role="group" aria-label="View">
           {(["list", "tiles"] as const).map((mode) => (
             <button
@@ -69,12 +74,13 @@ export function App(): React.JSX.Element {
             </button>
           ))}
         </div>
-        <span className="hint">↑↓←→ audition · Space replay</span>
+        <span className="hint">↑↓←→ audition · Space replay · * favourite</span>
       </header>
 
       <div className="main">
         <RootsPanel />
         {viewMode === "tiles" ? <SampleTiles /> : <SampleList />}
+        <Inspector />
       </div>
 
       <StatusBar />

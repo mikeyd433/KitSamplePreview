@@ -121,7 +121,10 @@ pub fn scan_roots(
     };
 
     std::thread::spawn(move || {
-        let opts = scan::ScanOptions { force, max_duration_ms };
+        // Analysis stays on: SPEC §11.4's metadata-only mode is the pressure
+        // valve for a large library on a slow disk, not something to reach for
+        // at current scale.
+        let opts = scan::ScanOptions { force, max_duration_ms, analyze: true };
         if let Err(e) = scan::run(&app, &db, scan_id, &root_ids, opts) {
             use tauri::Emitter;
             let _ = app.emit("scan:error", format!("scan failed: {e}"));
@@ -247,9 +250,21 @@ pub fn get_settings(state: State<'_, AppState>) -> CmdResult<serde_json::Value> 
     let view_mode = db::get_setting(&conn, "view.mode")
         .map_err(to_msg)?
         .unwrap_or_else(|| "list".to_string());
+    let number = |key: &str, fallback: f64| -> Result<f64, String> {
+        Ok(db::get_setting(&conn, key)
+            .map_err(to_msg)?
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(fallback))
+    };
     Ok(serde_json::json!({
         "scanMaxDurationMs": max_duration,
         "viewMode": view_mode,
+        // Body match is the SPEC §7.6 default.
+        "normalizeMode": db::get_setting(&conn, "preview.normalizeMode")
+            .map_err(to_msg)?
+            .unwrap_or_else(|| "body".to_string()),
+        "targetPeakDb": number("preview.targetPeakDb", -1.0)?,
+        "targetRmsDb": number("preview.targetRmsDb", -18.0)?,
     }))
 }
 

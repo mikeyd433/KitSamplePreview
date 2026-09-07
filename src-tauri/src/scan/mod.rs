@@ -10,6 +10,8 @@
 //! skip analysis" mode §11.4 holds in reserve, and for Phase 2's full-body peak
 //! analysis to slot in as a fourth step rather than a rewrite.
 
+pub mod analyze;
+pub mod category;
 pub mod probe;
 
 use std::collections::HashSet;
@@ -41,11 +43,18 @@ pub struct ScanOptions {
     /// Re-probe everything, ignoring the `(path, size, mtime)` fingerprint.
     pub force: bool,
     pub max_duration_ms: i64,
+    /// Read every byte of every file to compute peaks and levels.
+    ///
+    /// This is SPEC §11.4's pressure valve, wired but left on: full-body
+    /// analysis is what makes a large library on a network share slow, and
+    /// turning it off leaves a usable index with peaks computed lazily later.
+    /// At current library size it costs nothing to leave enabled.
+    pub analyze: bool,
 }
 
 impl Default for ScanOptions {
     fn default() -> Self {
-        Self { force: false, max_duration_ms: DEFAULT_MAX_DURATION_MS }
+        Self { force: false, max_duration_ms: DEFAULT_MAX_DURATION_MS, analyze: true }
     }
 }
 
@@ -176,7 +185,8 @@ pub fn run(
         // this is that one line. Progress is emitted from the fold so the UI
         // sees movement on a 5,000-file library rather than a frozen window.
         let done = std::sync::atomic::AtomicUsize::new(0);
-        let probed: Vec<(Candidate, Option<probe::Probed>, Option<String>)> = candidates
+        type Measured = (Candidate, Option<probe::Probed>, Option<analyze::Analysis>, Option<String>);
+        let probed: Vec<Measured> = candidates
             .into_par_iter()
             .map(|candidate| {
                 let unchanged = !opts.force
@@ -186,14 +196,24 @@ pub fn run(
                             *size == candidate.size_bytes && *mtime == candidate.mtime
                         });
 
-                let outcome = if unchanged {
-                    (candidate, None, None)
+                let outcome: Measured = if unchanged {
+                    (candidate, None, None, None)
                 } else {
-                    match probe::probe(&paths::for_file_io(
-                        &paths::canonicalize(&candidate.path),
-                    )) {
-                        Ok(p) => (candidate, Some(p), None),
-                        Err(e) => (candidate, None, Some(e)),
+                    let file = paths::for_file_io(&paths::canonicalize(&candidate.path));
+                    match probe::probe(&file) {
+                        Ok(p) => {
+                            // Analysis is its own call, not folded into the
+                            // probe (SPEC §11.4). A file whose header reads but
+                            // whose body will not decode still yields a row
+                            // with format metadata and no waveform.
+                            let measured = if opts.analyze {
+                                analyze::analyze(&file).ok()
+                            } else {
+                                None
+                            };
+                            (candidate, Some(p), measured, None)
+                        }
+                        Err(e) => (candidate, None, None, Some(e)),
                     }
                 };
 
@@ -220,7 +240,7 @@ pub fn run(
         let tx = conn.transaction()?;
         let mut seen: Vec<String> = Vec::with_capacity(probed.len());
 
-        for (candidate, probe_result, probe_error) in probed {
+        for (candidate, probe_result, measured, probe_error) in probed {
             seen.push(candidate.canonical.clone());
 
             let Some(_) = probe_result.as_ref().map(|_| ()).or(probe_error.as_ref().map(|_| ()))
@@ -253,12 +273,14 @@ pub fn run(
 
             let filename = paths::file_name(&candidate.rel_path).to_string();
             let probed = probe_result.unwrap_or_default();
+            let full_text = search::search_text(&candidate.rel_path);
+            let category = category::infer(&search::search_text(&filename), &full_text);
 
             db::upsert_sample(
                 &tx,
                 &SampleUpsert {
                     root_id: root.id,
-                    search_text: search::search_text(&candidate.rel_path),
+                    search_text: full_text.clone(),
                     parent_dir: parent_of(&candidate.rel_path),
                     ext: paths::extension(&filename),
                     filename,
@@ -271,6 +293,10 @@ pub fn run(
                     channels: probed.channels,
                     bit_depth: probed.bit_depth,
                     probe_error,
+                    true_peak_db: measured.as_ref().map(|m| m.true_peak_db),
+                    body_rms_db: measured.as_ref().map(|m| m.body_rms_db),
+                    peaks: measured.map(|m| m.peaks),
+                    category,
                 },
             )?;
         }

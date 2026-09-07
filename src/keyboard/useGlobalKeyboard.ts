@@ -91,6 +91,12 @@ export function useGlobalKeyboard(searchRef: React.RefObject<HTMLInputElement | 
           store.select(store.rows.length - 1);
           e.preventDefault();
           break;
+        case "*":
+          // SPEC §7.2. A favourite is a tag, so this rides on the same
+          // mechanism as everything else in the tag panel.
+          void store.toggleFavorite();
+          e.preventDefault();
+          break;
         case " ":
           void unlock();
           store.replay();

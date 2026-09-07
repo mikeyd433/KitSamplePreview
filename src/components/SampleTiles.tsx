@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLibrary } from "../stores/library";
 import type { SampleRow } from "../ipc/commands";
 import { formatChannels, formatDuration, formatRate, rowFault } from "./format";
+import { Waveform } from "./Waveform";
 
 /**
  * Tile view: the same rows, laid out as a grid.
@@ -132,8 +133,15 @@ function Tile({ row, selected, fault, onSelect }: TileProps): React.JSX.Element 
       onMouseDown={onSelect}
       title={fault ?? row.relPath}
     >
-      {/* Phase 2 (SPEC §7.4) renders the cached peaks blob here. */}
-      <div className="tile-wave" aria-hidden="true" />
+      <div className="tile-wave">
+        <Waveform
+          sampleId={row.id}
+          peaks={row.peaks}
+          width={TILE_WIDTH - 18}
+          height={34}
+          color={selected ? "#e8a84a" : "#6f6f80"}
+        />
+      </div>
       <div className="tile-name">{row.filename}</div>
       <div className="tile-meta">
         {fault !== null ? (

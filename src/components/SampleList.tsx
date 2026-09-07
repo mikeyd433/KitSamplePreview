@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLibrary } from "../stores/library";
 import type { SampleRow } from "../ipc/commands";
 import { formatDuration, formatRate, rowFault } from "./format";
+import { Waveform } from "./Waveform";
 
 /**
  * Virtualized from day one (SPEC §13): retrofitting virtualization into a
@@ -60,6 +61,7 @@ export function SampleList(): React.JSX.Element {
       <header className="list-head">
         <span className="col-name">NAME</span>
         <span className="col-dur">DUR</span>
+        <span className="col-wave" />
         <span className="col-rate">SR</span>
         <span className="col-ch">CH</span>
         <span className="col-count">
@@ -124,6 +126,17 @@ function Row({ row, selected, error, onSelect }: RowProps): React.JSX.Element {
         {broken && <span className="tag tag-err">{row.probeError !== null ? "unreadable" : "no preview"}</span>}
       </span>
       <span className="col-dur">{formatDuration(row.durationMs)}</span>
+      <span className="col-wave">
+        {/* Drawn from the blob the scan computed — no decode happens here
+            (SPEC §7.4). */}
+        <Waveform
+          sampleId={row.id}
+          peaks={row.peaks}
+          width={72}
+          height={16}
+          color={selected ? "#e8a84a" : "#6f6f80"}
+        />
+      </span>
       <span className="col-rate">{formatRate(row.sampleRate)}</span>
       <span className="col-ch">{row.channels ?? "—"}</span>
       <span className="col-count" />

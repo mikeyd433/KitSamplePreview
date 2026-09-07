@@ -80,6 +80,8 @@ export function RootsPanel(): React.JSX.Element {
         ))}
       </ul>
 
+      <TagFilter />
+
       {folders.length > 0 && (
         <>
           <h2>FOLDERS</h2>
@@ -91,6 +93,35 @@ export function RootsPanel(): React.JSX.Element {
         </>
       )}
     </aside>
+  );
+}
+
+/** The TAGS section of SPEC §6's sidebar. Favourites are just a tag. */
+function TagFilter(): React.JSX.Element | null {
+  const tags = useLibrary((s) => s.tags);
+  const tagFilter = useLibrary((s) => s.tagFilter);
+  const toggleTagFilter = useLibrary((s) => s.toggleTagFilter);
+
+  const used = tags.filter((t) => t.sampleCount > 0);
+  if (used.length === 0) return null;
+
+  return (
+    <>
+      <h2>TAGS</h2>
+      <ul className="root-list">
+        {used.map((tag) => (
+          <li key={tag.name}>
+            <button
+              className={`root${tagFilter.includes(tag.name) ? " active" : ""}`}
+              onClick={() => toggleTagFilter(tag.name)}
+            >
+              {tag.name === "favorite" ? "★ favorite" : `# ${tag.name}`}
+              <span className="count">{tag.sampleCount}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
 

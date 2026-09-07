@@ -28,6 +28,12 @@ export interface SampleRow {
   channels: number | null;
   bitDepth: number | null;
   category: string | null;
+  /** Loudest single sample, dBFS. Null until analysed. */
+  truePeakDb: number | null;
+  /** RMS of the loudest 300 ms window, dBFS. Null until analysed. */
+  bodyRmsDb: number | null;
+  /** 400 min/max i8 pairs, base64. Null until analysed. */
+  peaks: string | null;
   removed: boolean;
   /** Why the scan could not read this file. Null for healthy rows. */
   probeError: string | null;
@@ -122,6 +128,9 @@ export type ViewMode = "list" | "tiles";
 export interface Settings {
   scanMaxDurationMs: number;
   viewMode: ViewMode;
+  normalizeMode: "off" | "peak" | "body";
+  targetPeakDb: number;
+  targetRmsDb: number;
 }
 
 export const getSettings = (): Promise<Settings> => invoke<Settings>("get_settings");

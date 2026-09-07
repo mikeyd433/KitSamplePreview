@@ -28,3 +28,7 @@ walkdir = "2"
 rayon = "1"
 symphonia = { version = "0.5", features = ["wav", "flac", "mp3", "ogg", "vorbis", "aiff", "pcm", "isomp4", "aac", "alac"] }
 dunce = "1"
+# Peaks travel to the UI as base64 rather than a JSON array of 800 numbers per
+# row (~3 KB each, versus ~1 KB). An addition to SPEC §3's list, flagged per
+# §15 — trivial and dependency-free in turn, but still a decision.
+base64 = "0.22"

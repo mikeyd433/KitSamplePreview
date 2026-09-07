@@ -27,6 +27,29 @@ let current: Voice | null = null;
 /** Guards against a slow decode landing after a newer selection has moved on. */
 let generation = 0;
 
+interface PlayingVoice {
+  sampleId: number;
+  /** Context time at which the voice started. */
+  startedAt: number;
+  durationS: number;
+}
+let playing: PlayingVoice | null = null;
+
+/**
+ * How far through the current preview, 0–1, or null when nothing is sounding.
+ *
+ * Derived from `AudioContext.currentTime` rather than tracked by a timer: the
+ * context clock is the one the audio is actually running on, so the playhead
+ * cannot drift away from the sound (SPEC §7.4).
+ */
+export function playheadFraction(sampleId: number): number | null {
+  if (playing === null || playing.sampleId !== sampleId) return null;
+  const { ctx } = engine();
+  const elapsed = ctx.currentTime - playing.startedAt;
+  if (elapsed < 0 || elapsed > playing.durationS) return null;
+  return elapsed / playing.durationS;
+}
+
 function releaseCurrent(at: number): void {
   if (current === null) return;
   const { source, gain } = current;
@@ -48,7 +71,7 @@ export function stop(): void {
 }
 
 /** Starts `buffer` immediately, ramping out whatever is already sounding. */
-export function playBuffer(buffer: AudioBuffer, gainDb = 0): void {
+export function playBuffer(buffer: AudioBuffer, gainDb = 0, sampleId = -1): void {
   const { ctx, previewBus } = engine();
   const now = ctx.currentTime;
 
@@ -65,11 +88,13 @@ export function playBuffer(buffer: AudioBuffer, gainDb = 0): void {
   source.onended = () => {
     gain.disconnect();
     if (current === voice) current = null;
+    if (playing !== null && playing.sampleId === sampleId) playing = null;
   };
 
   // SPEC §7.2: preview always plays from the file's true start. No fade-in.
   source.start(now);
   current = voice;
+  playing = { sampleId, startedAt: now, durationS: buffer.duration };
 }
 
 export interface PreviewResult {
@@ -90,7 +115,7 @@ export async function previewSample(sampleId: number, gainDb = 0): Promise<Previ
 
   const cached = peek(sampleId);
   if (cached !== undefined) {
-    playBuffer(cached, gainDb);
+    playBuffer(cached, gainDb, sampleId);
     return { played: true };
   }
 
@@ -101,7 +126,7 @@ export async function previewSample(sampleId: number, gainDb = 0): Promise<Previ
     // sample the user has already scrolled past — the "dropped preview" that
     // §10 rules out is a missing sound, but a late one is worse.
     if (mine !== generation) return { played: false };
-    playBuffer(buffer, gainDb);
+    playBuffer(buffer, gainDb, sampleId);
     return { played: true };
   } catch (e) {
     if (mine !== generation) return { played: false };

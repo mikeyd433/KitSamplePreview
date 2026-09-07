@@ -9,12 +9,20 @@
 import { create } from "zustand";
 
 import * as ipc from "../ipc/commands";
-import type { FolderNode, LibraryRoot, SampleRow, ViewMode } from "../ipc/commands";
+import type {
+  FolderNode, LibraryRoot, SampleDetail, SampleRow, TagCount, ViewMode,
+} from "../ipc/commands";
+import { DEFAULT_NORMALIZE, previewGainDb, type NormalizeMode, type NormalizeSettings } from "../audio/gain";
 import { prefetch } from "../audio/bufferCache";
 import { previewSample } from "../audio/preview";
 
 /** How far either side of the selection to warm the decode cache (SPEC §8). */
 const PREFETCH_RADIUS = 3;
+
+/** Settle time before fetching the selected sample's detail. */
+const DETAIL_DEBOUNCE_MS = 120;
+
+let detailTimer: ReturnType<typeof setTimeout> | null = null;
 
 interface ScanState {
   running: boolean;
@@ -34,6 +42,13 @@ interface LibraryState {
   rootId: number | null;
   subtree: string | null;
   text: string;
+  category: string | null;
+  tagFilter: string[];
+
+  tags: TagCount[];
+  normalize: NormalizeSettings;
+  /** Tags and anything else the list row does not carry, for the inspector. */
+  detail: SampleDetail | null;
 
   viewMode: ViewMode;
   /**
@@ -61,6 +76,14 @@ interface LibraryState {
   setViewMode: (mode: ViewMode) => void;
   setColumns: (columns: number) => void;
 
+  setCategory: (category: string | null) => void;
+  toggleTagFilter: (tag: string) => void;
+  setNormalizeMode: (mode: NormalizeMode) => void;
+  setNormalizeTarget: (mode: "peak" | "body", db: number) => void;
+  toggleFavorite: () => Promise<void>;
+  setTagsForSelected: (tags: string[]) => Promise<void>;
+  refreshTags: () => Promise<void>;
+
   setText: (text: string) => void;
   setRoot: (rootId: number | null) => void;
   setSubtree: (subtree: string | null) => void;
@@ -81,6 +104,12 @@ export const useLibrary = create<LibraryState>((set, get) => ({
   rootId: null,
   subtree: null,
   text: "",
+  category: null,
+  tagFilter: [],
+
+  tags: [],
+  normalize: DEFAULT_NORMALIZE,
+  detail: null,
 
   viewMode: "list",
   columns: 1,
@@ -148,7 +177,14 @@ export const useLibrary = create<LibraryState>((set, get) => ({
   loadSettings: async () => {
     try {
       const settings = await ipc.getSettings();
-      set({ viewMode: settings.viewMode === "tiles" ? "tiles" : "list" });
+      set({
+        viewMode: settings.viewMode === "tiles" ? "tiles" : "list",
+        normalize: {
+          mode: settings.normalizeMode,
+          targetPeakDb: settings.targetPeakDb,
+          targetRmsDb: settings.targetRmsDb,
+        },
+      });
     } catch {
       // A settings read that fails is not worth blocking startup over; the
       // defaults are perfectly usable.
@@ -162,6 +198,70 @@ export const useLibrary = create<LibraryState>((set, get) => ({
 
   setColumns: (columns) => {
     if (columns > 0 && columns !== get().columns) set({ columns });
+  },
+
+  setCategory: (category) => {
+    set({ category });
+    void get().runQuery();
+  },
+
+  toggleTagFilter: (tag) => {
+    const current = get().tagFilter;
+    // AND semantics (SPEC §7.3): every selected tag must be present.
+    set({ tagFilter: current.includes(tag) ? current.filter((t) => t !== tag) : [...current, tag] });
+    void get().runQuery();
+  },
+
+  setNormalizeMode: (mode) => {
+    set((s) => ({ normalize: { ...s.normalize, mode } }));
+    void ipc.setSetting("preview.normalizeMode", mode).catch(() => undefined);
+    // Re-fire so the change is audible immediately rather than on the next
+    // selection — the point of the control is A/B-ing it.
+    get().replay();
+  },
+
+  setNormalizeTarget: (mode, db) => {
+    set((s) => ({
+      normalize: {
+        ...s.normalize,
+        ...(mode === "peak" ? { targetPeakDb: db } : { targetRmsDb: db }),
+      },
+    }));
+    const key = mode === "peak" ? "preview.targetPeakDb" : "preview.targetRmsDb";
+    void ipc.setSetting(key, String(db)).catch(() => undefined);
+  },
+
+  refreshTags: async () => {
+    try {
+      set({ tags: await ipc.listTags() });
+    } catch {
+      /* the tag panel is not worth an error banner */
+    }
+  },
+
+  toggleFavorite: async () => {
+    const { detail } = get();
+    if (detail === null) return;
+    // SPEC §6 shows favourites in the tag list; a favourite is just a tag, so
+    // there is no second mechanism to keep in step with the first.
+    const next = detail.tags.includes("favorite")
+      ? detail.tags.filter((t) => t !== "favorite")
+      : [...detail.tags, "favorite"];
+    await get().setTagsForSelected(next);
+  },
+
+  setTagsForSelected: async (tags) => {
+    const { detail } = get();
+    if (detail === null) return;
+    try {
+      await ipc.setTags(detail.id, tags);
+      set({ detail: { ...detail, tags } });
+      await get().refreshTags();
+      // A tag filter that no longer matches must drop the row from the list.
+      if (get().tagFilter.length > 0) await get().runQuery();
+    } catch (e) {
+      set({ error: ipc.errorText(e) });
+    }
   },
 
   setText: (text) => {
@@ -184,10 +284,13 @@ export const useLibrary = create<LibraryState>((set, get) => ({
     const { rootId, subtree, text } = get();
     set({ loading: true });
     try {
+      const { category, tagFilter } = get();
       const page = await ipc.listSamples({
         rootId,
         subtree,
         text: text.trim() === "" ? null : text,
+        category,
+        tags: tagFilter,
       });
       // Keep the selection where it is if the row is still present, so typing
       // a search term that narrows the list does not throw away the user's place.
@@ -214,7 +317,7 @@ export const useLibrary = create<LibraryState>((set, get) => ({
 
     if (options?.preview === false) return;
 
-    void previewSample(row.id).then((result) => {
+    void previewSample(row.id, previewGainDb(row, get().normalize)).then((result) => {
       set((s) => {
         const errors = { ...s.rowErrors };
         if (result.error === undefined) delete errors[row.id];
@@ -222,6 +325,20 @@ export const useLibrary = create<LibraryState>((set, get) => ({
         return { rowErrors: errors };
       });
     });
+
+    // The inspector needs tags, which the list row does not carry. Debounced:
+    // holding the arrow key would otherwise fire one IPC round trip per row,
+    // competing with the decodes that actually have to be fast.
+    if (detailTimer !== null) clearTimeout(detailTimer);
+    detailTimer = setTimeout(() => {
+      void ipc
+        .getSample(row.id)
+        .then((detail) => {
+          // Discard if the selection moved on while this was in flight.
+          if (get().rows[get().selectedIndex]?.id === row.id) set({ detail });
+        })
+        .catch(() => undefined);
+    }, DETAIL_DEBOUNCE_MS);
 
     // Warm the neighbours so arrow-key scrubbing never waits on a decode.
     const ids: number[] = [];

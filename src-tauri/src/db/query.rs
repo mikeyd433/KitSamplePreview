@@ -2,6 +2,8 @@
 
 use std::collections::HashMap;
 
+use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::Engine;
 use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde::{Deserialize, Serialize};
 
@@ -91,6 +93,12 @@ pub struct SampleRow {
     pub channels: Option<i64>,
     pub bit_depth: Option<i64>,
     pub category: Option<String>,
+    /// Loudest single sample, dBFS. Drives peak-match normalisation (§7.6).
+    pub true_peak_db: Option<f32>,
+    /// RMS of the loudest 300 ms window, dBFS. Drives body-match (§7.6).
+    pub body_rms_db: Option<f32>,
+    /// 400 min/max `i8` pairs, base64. Null until analysed.
+    pub peaks: Option<String>,
     pub removed: bool,
     /// Why the file could not be probed. A row with this set still appears in
     /// the list — a broken file the user cannot see is a file they cannot fix.
@@ -112,13 +120,19 @@ fn sample_row_from(row: &Row<'_>) -> rusqlite::Result<SampleRow> {
         channels: row.get(10)?,
         bit_depth: row.get(11)?,
         category: row.get(12)?,
-        removed: row.get::<_, Option<i64>>(13)?.is_some(),
-        probe_error: row.get(14)?,
+        true_peak_db: row.get(13)?,
+        body_rms_db: row.get(14)?,
+        peaks: row
+            .get::<_, Option<Vec<u8>>>(15)?
+            .map(|blob| BASE64.encode(blob)),
+        removed: row.get::<_, Option<i64>>(16)?.is_some(),
+        probe_error: row.get(17)?,
     })
 }
 
 const SAMPLE_COLUMNS: &str = "id, root_id, path, rel_path, filename, parent_dir, ext, \
-     size_bytes, duration_ms, sample_rate, channels, bit_depth, category, removed_at, probe_error";
+     size_bytes, duration_ms, sample_rate, channels, bit_depth, category, true_peak_db, \
+     body_rms_db, peaks, removed_at, probe_error";
 
 /// What the scan hands back for one file.
 pub struct SampleUpsert {
@@ -136,6 +150,12 @@ pub struct SampleUpsert {
     pub bit_depth: Option<i64>,
     pub search_text: String,
     pub probe_error: Option<String>,
+    /// Analysis results. All `None` when the scan ran without analysis, or when
+    /// the file could not be decoded — the row still exists either way.
+    pub true_peak_db: Option<f32>,
+    pub body_rms_db: Option<f32>,
+    pub peaks: Option<Vec<u8>>,
+    pub category: Option<String>,
 }
 
 /// Inserts or refreshes one sample.
@@ -147,8 +167,10 @@ pub fn upsert_sample(conn: &Connection, s: &SampleUpsert) -> Result<(), DbError>
     conn.execute(
         "INSERT INTO sample (root_id, path, rel_path, filename, parent_dir, ext, size_bytes,
                              mtime, duration_ms, sample_rate, channels, bit_depth, search_text,
-                             probe_error, removed_at, scanned_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, NULL, ?15)
+                             probe_error, true_peak_db, body_rms_db, peaks, category,
+                             removed_at, scanned_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
+                 COALESCE(?18, (SELECT category FROM sample WHERE path = ?2)), NULL, ?19)
          ON CONFLICT(path) DO UPDATE SET
              root_id = excluded.root_id,
              rel_path = excluded.rel_path,
@@ -163,12 +185,18 @@ pub fn upsert_sample(conn: &Connection, s: &SampleUpsert) -> Result<(), DbError>
              bit_depth = excluded.bit_depth,
              search_text = excluded.search_text,
              probe_error = excluded.probe_error,
+             true_peak_db = COALESCE(excluded.true_peak_db, sample.true_peak_db),
+             body_rms_db = COALESCE(excluded.body_rms_db, sample.body_rms_db),
+             peaks = COALESCE(excluded.peaks, sample.peaks),
+             -- A user override survives a rescan: inference only ever fills a
+             -- category in, it never replaces one that is already set (§7.1).
+             category = COALESCE(sample.category, excluded.category),
              removed_at = NULL,
              scanned_at = excluded.scanned_at",
         params![
             s.root_id, s.path, s.rel_path, s.filename, s.parent_dir, s.ext, s.size_bytes,
             s.mtime, s.duration_ms, s.sample_rate, s.channels, s.bit_depth, s.search_text,
-            s.probe_error, now_secs()
+            s.probe_error, s.true_peak_db, s.body_rms_db, s.peaks, s.category, now_secs()
         ],
     )?;
     Ok(())
