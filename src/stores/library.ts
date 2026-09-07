@@ -260,8 +260,16 @@ export const useLibrary = create<LibraryState>((set, get) => ({
   },
 
   refreshCategories: async () => {
+    const { rootId, subtree, text, tagFilter } = get();
     try {
-      set({ categories: await ipc.categoryCounts() });
+      set({
+        categories: await ipc.categoryCounts({
+          rootId,
+          subtree,
+          text: text.trim() === "" ? null : text,
+          tags: tagFilter,
+        }),
+      });
     } catch {
       /* the sidebar counts are not worth an error banner */
     }
@@ -366,6 +374,11 @@ export const useLibrary = create<LibraryState>((set, get) => ({
         error: null,
         selectedIndex: nextIndex,
       });
+
+      // The chips are facets over this query, so they go stale the moment the
+      // scope moves. Not awaited: the list is the thing being waited for, and
+      // counts arriving a frame later is not worth holding it up.
+      void get().refreshCategories();
     } catch (e) {
       set({ loading: false, error: ipc.errorText(e) });
     }

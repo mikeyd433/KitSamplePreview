@@ -387,10 +387,16 @@ pub fn set_tags(state: State<'_, AppState>, sample_id: i64, tags: Vec<String>) -
     db::set_tags(&conn, sample_id, &tags).map_err(to_msg)
 }
 
+/// Takes the same query as `list_samples` so the counts describe what is in
+/// view, not what is in the library. Its own category filter is ignored; see
+/// `db::category_counts`.
 #[tauri::command]
-pub fn category_counts(state: State<'_, AppState>) -> CmdResult<Vec<db::CategoryCount>> {
+pub fn category_counts(
+    state: State<'_, AppState>,
+    query: db::SampleQuery,
+) -> CmdResult<Vec<db::CategoryCount>> {
     let conn = state.db.lock().map_err(to_msg)?;
-    db::category_counts(&conn).map_err(to_msg)
+    db::category_counts(&conn, &query).map_err(to_msg)
 }
 
 /// Corrects the category on one sample or a whole selection.

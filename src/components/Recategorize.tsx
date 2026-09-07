@@ -1,8 +1,7 @@
 import { useState } from "react";
 
 import { useLibrary } from "../stores/library";
-
-const CATEGORIES = ["kick", "snare", "hat", "clap", "tom", "perc", "cymbal", "808", "vox", "fx"];
+import { CANONICAL_CATEGORIES, orderCategories } from "../categories";
 
 /**
  * Refile everything currently listed.
@@ -23,7 +22,20 @@ export function Recategorize(): React.JSX.Element | null {
   const category = useLibrary((s) => s.category);
   const recategorizeVisible = useLibrary((s) => s.recategorizeVisible);
 
+  const categories = useLibrary((s) => s.categories);
+
   const [open, setOpen] = useState(false);
+
+  // The full vocabulary, not just what is in use: filing the first sample into
+  // an empty category is the whole point of the menu. Anything the library
+  // holds that this build does not know about is offered too, so a category
+  // made by an older build stays reachable.
+  const choices = orderCategories([
+    ...new Set([
+      ...CANONICAL_CATEGORIES,
+      ...categories.flatMap((c) => (c.category === null ? [] : [c.category])),
+    ]),
+  ]);
 
   const narrowed = subtree !== null || text.trim() !== "" || category !== null;
   if (!narrowed || rows.length === 0) return null;
@@ -41,7 +53,7 @@ export function Recategorize(): React.JSX.Element | null {
 
       {open && (
         <div className="recat-menu">
-          {CATEGORIES.map((name) => (
+          {choices.map((name) => (
             <button key={name} onClick={() => apply(name)}>
               {name}
             </button>

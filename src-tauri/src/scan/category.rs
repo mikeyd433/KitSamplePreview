@@ -55,7 +55,8 @@ const CATEGORIES: &[(&str, &[Pattern])] = &[
         Contains("swell"), Contains("reverse"), Word("transition"), Contains("downlifter"),
         Contains("uplifter"), Contains("whoosh"), Word("drone"), Contains("ambience"),
         Contains("ambient"), Contains("atmos"), Contains("foley"), Contains("siren"),
-        Contains("glitch"), Contains("stinger"), Word("braam"),
+        Contains("glitch"), Contains("stinger"), Word("braam"), Contains("scratch"),
+        Contains("vinyl stop"), Word("tape stop"),
     ]),
     ("kick", &[
         Contains("kick"), Contains("kik"), Token("bd"), Token("bd1"), Token("bd2"),
@@ -83,10 +84,17 @@ const CATEGORIES: &[(&str, &[Pattern])] = &[
         Contains("maraca"), Contains("whistle"), Contains("vibraslap"), Contains("shekere"),
         Contains("darbuka"), Contains("dholak"), Contains("handdrum"), Contains("hand drum"),
     ]),
+    // Below every drum, deliberately: a `snare fill` is a snare and a `hat roll`
+    // is a hat. Above 808, though, which is a fallback rather than a drum -- an
+    // `808 roll` is a fill. This only claims names with no instrument in them --
+    // `Fills\\01.wav`, `ROLL 1.wav` -- which is exactly when a fill is what the
+    // name is telling you.
+    ("fill", &[Word("fill"), Word("roll"), Contains("drumfill")]),
     ("vox", &[
         Word("vox"), Contains("vocal"), Word("voice"), Contains("adlib"), Contains("ad lib"),
         Word("chant"), Contains("phrase"), Contains("acapella"), Contains("accapella"),
-        Word("shout"), Word("yell"), Word("scream"),
+        Word("shout"), Word("yell"), Word("scream"), Contains("laugh"), Word("grunt"),
+        Contains("breath"), Word("talk"), Contains("spoken"),
     ]),
     // Last, as a fallback: an 808 is whatever was not identifiable as a
     // specific drum. Trap packs put "808" in nearly every filename, so placing
@@ -148,7 +156,7 @@ pub fn infer(filename_text: &str, full_text: &str) -> Option<String> {
 /// filed under, so improved rules reach existing rows. Without it the only way
 /// to benefit would be a full rescan, which re-reads every byte of every file
 /// to recompute waveforms that have not changed.
-pub const RULES_VERSION: i64 = 3;
+pub const RULES_VERSION: i64 = 4;
 
 /// Re-files every sample whose category is still a guess.
 ///
@@ -489,6 +497,42 @@ mod tests {
         ] {
             assert_eq!(infer_path(name).as_deref(), Some("fx"), "name: {name}");
         }
+    }
+
+    /// Names taken off a screenshot of a real drill library. Every one of these
+    /// was landing in uncategorised.
+    #[test]
+    fn recognises_names_seen_in_a_real_drill_library() {
+        for (path, expected) in [
+            ("SCRATCH 2.wav", "fx"),
+            ("LAUGH.wav", "vox"),
+            ("ROLL 1.wav", "fill"),
+            ("ROLL.wav", "fill"),
+            (r"NY DRILL\Fills\01.wav", "fill"),
+            (r"NY DRILL\Rims\03.wav", "snare"),
+            (r"NY DRILL\Risers\07.wav", "fx"),
+            (r"NY DRILL\Open hats\02.wav", "hat"),
+            (r"JERSEY DRILL\Counter Snares\04.wav", "snare"),
+            (r"JERSEY DRILL\Snaps\02.wav", "clap"),
+        ] {
+            assert_eq!(infer_path(path).as_deref(), Some(expected), "path: {path}");
+        }
+        // And the ones that genuinely say nothing still say nothing. Guessing
+        // at these would be worse than leaving them for the uncategorised chip.
+        assert_eq!(infer_path("DD_PDV_EXTRA_39.wav"), None);
+    }
+
+    /// `fill` sits below the drums, so an instrument in the name still wins.
+    #[test]
+    fn a_named_drum_beats_fill() {
+        assert_eq!(infer_path("snare fill 03.wav").as_deref(), Some("snare"));
+        assert_eq!(infer_path("hat roll fast.wav").as_deref(), Some("hat"));
+        // 808 is the fallback, not a drum, so `fill` is the more specific of
+        // the two and takes it -- which is also where you would look for it.
+        assert_eq!(infer_path("808 roll.wav").as_deref(), Some("fill"));
+        // Nothing named: the fill is what the name is telling you.
+        assert_eq!(infer_path("Fill 02.wav").as_deref(), Some("fill"));
+        assert_eq!(infer_path("Deep 808.wav").as_deref(), Some("808"));
     }
 
     #[test]

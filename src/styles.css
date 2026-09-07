@@ -228,6 +228,13 @@ button:disabled { opacity: 0.4; cursor: default; }
   color: var(--dim); background: var(--panel-2);
 }
 .chip.active { color: var(--accent); border-color: var(--accent); background: var(--sel); }
+/* The count is context, not the label: same size, dimmer, and it must not push
+   the word around as numbers change under a filter. */
+.chip-count { margin-left: 5px; opacity: 0.55; font-variant-numeric: tabular-nums; }
+/* uncategorised is a destination rather than a filter you reach for. */
+.chip.muted { opacity: 0.6; }
+.chip.muted.active { opacity: 1; }
+
 
 /* --- waveform columns --- */
 

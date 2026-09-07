@@ -262,7 +262,9 @@ Preview always plays from the file's true start. No fade-in.
 ### 7.3 Search and filtering
 
 - Text search over the normalized `search_text` column (§4), AND-ing one `LIKE` clause per whitespace-separated term, so `808 kick` matches `Vinyl_808s/KICK_808_deep_02.wav` in any term order
-- Quick-filter chips for inferred categories (kick / snare / hat / clap / tom / perc / cymbal / fx)
+- Quick-filter chips for inferred categories (kick / snare / hat / clap / tom / perc / cymbal / fill / 808 / vox / fx)
+  - Amended in build: the chips are built from the categories the library actually contains, with counts, rather than from this fixed list. A drill pack has no toms and no cymbals, and chips that always return nothing teach you to distrust the row. The list above is the vocabulary offered when refiling; the chips are what you have.
+  - Also amended: `808` and `fill` are categories of their own, and `uncategorised` is a chip. `808` because packs ship a folder of them and an 808 is played as a bass line as often as a kick; `fill` because packs ship those too and a fill is not a single drum; `uncategorised` because it is where every failed guess lands and therefore the only place a correction can start.
 - Tag filter (user tags, multi-select, AND semantics)
 - Duration range slider — useful for separating one-shots from loops that snuck in
 - Format filter (ext, sample rate, mono/stereo) — matters when the target sampler is picky

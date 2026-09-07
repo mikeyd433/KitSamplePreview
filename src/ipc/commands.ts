@@ -85,8 +85,9 @@ export interface CategoryCount {
   sampleCount: number;
 }
 
-export const categoryCounts = (): Promise<CategoryCount[]> =>
-  invoke<CategoryCount[]>("category_counts");
+/** Facet counts for `query`, which is the list's own query minus its category. */
+export const categoryCounts = (query: SampleQuery): Promise<CategoryCount[]> =>
+  invoke<CategoryCount[]>("category_counts", { query });
 
 export const setCategory = (
   ids: number[],

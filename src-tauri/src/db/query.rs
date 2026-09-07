@@ -488,15 +488,29 @@ pub struct CategoryCount {
     pub sample_count: i64,
 }
 
-pub fn category_counts(conn: &Connection) -> Result<Vec<CategoryCount>, DbError> {
-    let mut stmt = conn.prepare(
-        "SELECT category, COUNT(*) FROM sample
-          WHERE removed_at IS NULL
-          GROUP BY category
-          ORDER BY category IS NULL, category COLLATE NOCASE",
-    )?;
+/// Counts per category under the query's own filters -- except the category
+/// filter itself, which is cleared.
+///
+/// That exception is what makes these usable as facets. Counted with the
+/// category filter left in, every chip but the selected one reads zero and the
+/// row stops telling you anything. Counted with the other filters dropped, a
+/// pack scoped to 18 kicks shows 121 and clicking it contradicts the number.
+pub fn category_counts(
+    conn: &Connection,
+    query: &SampleQuery,
+) -> Result<Vec<CategoryCount>, DbError> {
+    let scope = SampleQuery { category: None, ..query.clone() };
+    let (where_sql, binds) = where_clause(&scope);
+    let bind_refs: Vec<&dyn rusqlite::ToSql> = binds.iter().map(|b| b.as_ref()).collect();
+
+    let sql = format!(
+        "SELECT s.category, COUNT(*) FROM sample s{where_sql}
+          GROUP BY s.category
+          ORDER BY s.category IS NULL, s.category COLLATE NOCASE"
+    );
+    let mut stmt = conn.prepare(&sql)?;
     let rows = stmt
-        .query_map([], |row| {
+        .query_map(bind_refs.as_slice(), |row| {
             Ok(CategoryCount { category: row.get(0)?, sample_count: row.get(1)? })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -741,4 +755,48 @@ mod tests {
         assert_eq!(page.total, 6);
         assert!(page.rows.is_empty());
     }
+
+    /// Facet counts describe what is in view. Two things have to hold at once:
+    /// every other filter narrows them, and the category filter does not --
+    /// otherwise selecting a chip zeroes every other chip and the row stops
+    /// being navigable.
+    #[test]
+    fn category_counts_follow_the_scope_but_ignore_the_category() {
+        let conn = fixture();
+        for (id, category) in [
+            (1, "kick"), (2, "kick"), (3, "kick"),
+            (4, "snare"), (5, "snare"),
+        ] {
+            conn.execute("UPDATE sample SET category = ?1 WHERE id = ?2",
+                         rusqlite::params![category, id]).unwrap();
+        }
+        // Row 6 is left NULL: the uncategorised bucket has to be counted too.
+
+        let counts = |q: &SampleQuery| -> Vec<(Option<String>, i64)> {
+            category_counts(&conn, q)
+                .unwrap()
+                .into_iter()
+                .map(|c| (c.category, c.sample_count))
+                .collect()
+        };
+
+        assert_eq!(
+            counts(&SampleQuery::default()),
+            vec![(Some("kick".into()), 3), (Some("snare".into()), 2), (None, 1)],
+            "unscoped: everything, uncategorised last"
+        );
+
+        // Scoped to a folder -- the same LIKE path that once matched nothing.
+        let in_kicks = SampleQuery { subtree: Some(r"1. KICK".into()), ..Default::default() };
+        assert_eq!(counts(&in_kicks), vec![(Some("kick".into()), 3)]);
+
+        // Narrowed by search text.
+        let searched = SampleQuery { text: Some("snare".into()), ..Default::default() };
+        assert_eq!(counts(&searched), vec![(Some("snare".into()), 2)]);
+
+        // And with a category selected, the other chips keep their counts.
+        let picked = SampleQuery { category: Some("kick".into()), ..Default::default() };
+        assert_eq!(counts(&picked), counts(&SampleQuery::default()));
+    }
+
 }
