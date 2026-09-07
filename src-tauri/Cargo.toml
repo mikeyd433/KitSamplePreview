@@ -19,17 +19,17 @@ tauri-plugin-drag = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
-# SPEC §3 names tauri-plugin-sql. Using rusqlite directly instead: §5 puts every
+# SPEC 3 names tauri-plugin-sql. Using rusqlite directly instead: SPEC 5 puts every
 # query behind a Rust command, which a frontend-facing SQL plugin would only
-# route around, and §4's own FTS5 note already talks in terms of rusqlite
+# route around, and SPEC 4's own FTS5 note already talks in terms of rusqlite
 # features. `bundled` pins a known SQLite build so the FTS5 availability
-# question §4 defers is answerable on our terms rather than the host's.
+# question SPEC 4 defers is answerable on our terms rather than the host's.
 rusqlite = { version = "0.37", features = ["bundled"] }
 walkdir = "2"
 rayon = "1"
 symphonia = { version = "0.5", features = ["wav", "flac", "mp3", "ogg", "vorbis", "aiff", "pcm", "isomp4", "aac", "alac"] }
 dunce = "1"
 # Peaks travel to the UI as base64 rather than a JSON array of 800 numbers per
-# row (~3 KB each, versus ~1 KB). An addition to SPEC §3's list, flagged per
-# §15 — trivial and dependency-free in turn, but still a decision.
+# row (~3 KB each, versus ~1 KB). An addition to SPEC 3's list, flagged per
+# SPEC 15 -- trivial and dependency-free in turn, but still a decision.
 base64 = "0.22"
