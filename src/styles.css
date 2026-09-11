@@ -485,3 +485,37 @@ button:disabled { opacity: 0.4; cursor: default; }
 }
 .recat-menu button { font-size: 11px; }
 .recat-reset { grid-column: 1 / -1; color: var(--dim); }
+
+/* --- chromatic spread --- */
+
+.chromatic { position: relative; display: inline-flex; align-items: center; gap: 6px; }
+.chromatic-menu {
+  position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 20;
+  width: 260px; padding: 10px; border-radius: 6px;
+  background: var(--panel-2); border: 1px solid var(--line);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
+  display: flex; flex-direction: column; gap: 8px;
+}
+.chromatic-source {
+  margin: 0; font-size: 11px; color: var(--fg);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.chromatic-menu label {
+  display: grid; grid-template-columns: 34px 1fr 34px; align-items: center; gap: 6px;
+  font-size: 11px; color: var(--dim);
+}
+/* Tabular so the numbers do not jostle the slider while it is being dragged. */
+.chromatic-value { text-align: right; font-variant-numeric: tabular-nums; color: var(--fg); }
+.chromatic-range, .chromatic-note, .chromatic-warn { margin: 0; font-size: 11px; }
+.chromatic-warn { color: var(--err); }
+.chromatic-apply { width: 100%; }
+.chromatic-rendering { font-size: 11px; color: var(--accent); }
+/* The note sits in the pad's top row, where there is room beside the key hint. */
+.pad-pitch {
+  margin-left: auto; font-size: 10px; color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+/* Same shape as the group/view toggles, so a mode switch reads as one. */
+.pad-mode { display: inline-flex; gap: 2px; }
+.pad-mode button { font-size: 11px; padding: 3px 8px; color: var(--dim); }
+.pad-mode button.active { color: var(--accent); border-color: var(--accent); background: var(--sel); }

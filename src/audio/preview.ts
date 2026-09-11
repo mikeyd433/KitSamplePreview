@@ -70,8 +70,31 @@ export function stop(): void {
   releaseCurrent(ctx.currentTime);
 }
 
-/** Starts `buffer` immediately, ramping out whatever is already sounding. */
-export function playBuffer(buffer: AudioBuffer, gainDb = 0, sampleId = -1): void {
+/**
+ * Playback-rate multiplier for a semitone offset.
+ *
+ * Must match `pitch::rate_for` on the Rust side exactly, because the preview is
+ * the audition and the render is what gets dragged: if they disagreed, a pad
+ * would export at a different pitch than the one you approved.
+ */
+export function rateForSemitones(semitones: number): number {
+  return 2 ** (semitones / 12);
+}
+
+/**
+ * Starts `buffer` immediately, ramping out whatever is already sounding.
+ *
+ * `semitones` is varispeed, the same as the render: up is faster and shorter.
+ * Nothing is pre-rendered to preview a pitch -- `playbackRate` on the source
+ * node is exact and free, so auditioning a chromatic spread stays as immediate
+ * as auditioning anything else.
+ */
+export function playBuffer(
+  buffer: AudioBuffer,
+  gainDb = 0,
+  sampleId = -1,
+  semitones = 0,
+): void {
   const { ctx, previewBus } = engine();
   const now = ctx.currentTime;
 
@@ -81,6 +104,8 @@ export function playBuffer(buffer: AudioBuffer, gainDb = 0, sampleId = -1): void
   gain.gain.value = dbToGain(gainDb);
   const source = ctx.createBufferSource();
   source.buffer = buffer;
+  const rate = rateForSemitones(semitones);
+  source.playbackRate.value = rate;
   source.connect(gain);
   gain.connect(previewBus);
 
@@ -94,7 +119,9 @@ export function playBuffer(buffer: AudioBuffer, gainDb = 0, sampleId = -1): void
   // SPEC §7.2: preview always plays from the file's true start. No fade-in.
   source.start(now);
   current = voice;
-  playing = { sampleId, startedAt: now, durationS: buffer.duration };
+  // The sounding duration, not the buffer's: at double rate the playhead has to
+  // cross the waveform in half the time or it trails the sound it is drawing.
+  playing = { sampleId, startedAt: now, durationS: buffer.duration / rate };
 }
 
 export interface PreviewResult {
@@ -110,12 +137,16 @@ export interface PreviewResult {
  * what keeps SPEC §10's "under 30 ms cached" target reachable. Only a cold
  * sample goes through the async path.
  */
-export async function previewSample(sampleId: number, gainDb = 0): Promise<PreviewResult> {
+export async function previewSample(
+  sampleId: number,
+  gainDb = 0,
+  semitones = 0,
+): Promise<PreviewResult> {
   void unlock();
 
   const cached = peek(sampleId);
   if (cached !== undefined) {
-    playBuffer(cached, gainDb, sampleId);
+    playBuffer(cached, gainDb, sampleId, semitones);
     return { played: true };
   }
 
@@ -126,7 +157,7 @@ export async function previewSample(sampleId: number, gainDb = 0): Promise<Previ
     // sample the user has already scrolled past — the "dropped preview" that
     // §10 rules out is a missing sound, but a late one is worse.
     if (mine !== generation) return { played: false };
-    playBuffer(buffer, gainDb, sampleId);
+    playBuffer(buffer, gainDb, sampleId, semitones);
     return { played: true };
   } catch (e) {
     if (mine !== generation) return { played: false };

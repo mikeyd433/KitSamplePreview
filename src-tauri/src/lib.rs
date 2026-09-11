@@ -8,6 +8,7 @@ pub mod commands;
 pub mod convert;
 pub mod db;
 pub mod paths;
+pub mod pitch;
 pub mod scan;
 pub mod search;
 
@@ -77,6 +78,7 @@ pub fn run() {
             commands::get_sample,
             commands::folder_tree,
             commands::resolve_playable,
+            commands::render_pitched,
             commands::set_tags,
             commands::list_tags,
             commands::category_counts,

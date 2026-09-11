@@ -3,8 +3,10 @@ import { useEffect, useState } from "react";
 import { useKit, SLOT_COUNT, type Slot } from "../stores/kit";
 import { useLibrary } from "../stores/library";
 import { dragOut } from "../ipc/drag";
+import * as ipc from "../ipc/commands";
 import { Waveform } from "./Waveform";
 import { ExportDialog } from "./ExportDialog";
+import { Chromatic } from "./Chromatic";
 
 /**
  * The 16-slot tray (SPEC §7.7), mirroring Sitala's 4x4 so pad positions
@@ -34,6 +36,8 @@ export function KitTray(): React.JSX.Element {
   const load = useKit((s) => s.load);
   const clearAll = useKit((s) => s.clearAll);
   const refreshKits = useKit((s) => s.refreshKits);
+  const padMode = useKit((s) => s.padMode);
+  const setPadMode = useKit((s) => s.setPadMode);
 
   const [exporting, setExporting] = useState(false);
 
@@ -77,6 +81,7 @@ export function KitTray(): React.JSX.Element {
           ))}
         </select>
         <button onClick={() => clearAll()}>new</button>
+        <Chromatic />
         <button
           onClick={() => setExporting(true)}
           disabled={filled === 0}
@@ -84,6 +89,22 @@ export function KitTray(): React.JSX.Element {
         >
           export kit…
         </button>
+        <div className="pad-mode" role="group" aria-label="What the pad keys do">
+          {(["assign", "play"] as const).map((mode) => (
+            <button
+              key={mode}
+              className={padMode === mode ? "active" : ""}
+              onClick={() => setPadMode(mode)}
+              title={
+                mode === "assign"
+                  ? "The 16 keys put the selected sample on a pad"
+                  : "The 16 keys play the pads — how a chromatic spread is played"
+              }
+            >
+              {mode}
+            </button>
+          ))}
+        </div>
         <span className="kit-hint">drag a pad → Sitala</span>
       </header>
 
@@ -153,6 +174,14 @@ function Pad({ index, slot }: { index: number; slot: Slot }): React.JSX.Element 
       <div className="pad-top">
         <span className="pad-index">{index + 1}</span>
         <span className="pad-key">{SLOT_KEYS[index]}</span>
+        {slot.semitones !== 0 && (
+          <span
+            className="pad-pitch"
+            title={`${noteName(slot.semitones)} — ${formatSemitones(slot.semitones)} semitones from the original`}
+          >
+            {noteName(slot.semitones)}
+          </span>
+        )}
         {sample !== null && (
           <>
             <span
@@ -175,21 +204,46 @@ function Pad({ index, slot }: { index: number; slot: Slot }): React.JSX.Element 
 
       <div
         className="pad-body"
-        draggable={sample !== null && blocked === null}
+        draggable={sample !== null && (blocked === null || slot.semitones !== 0)}
         onMouseDown={() => selectSlot(index)}
         onDragStart={(e) => {
           // Cancel the webview's own drag and hand the file to the OS instead.
           e.preventDefault();
           if (sample === null) return;
-          const result = dragOut([sample.path], blocked);
-          if (!result.started && result.error !== undefined) {
-            useKit.setState({ error: result.error });
+
+          if (slot.semitones === 0) {
+            const result = dragOut([sample.path], blocked);
+            if (!result.started && result.error !== undefined) {
+              useKit.setState({ error: result.error });
+            }
+            return;
           }
+
+          // A pitched pad drags its render. Normally already on disk -- the
+          // spread renders all sixteen up front -- so this resolves out of the
+          // file cache in a few milliseconds, while the mouse is still down.
+          //
+          // The source file's MAX_PATH block does not apply: the render lives
+          // in the app's own cache directory, so a sample too deeply nested to
+          // drag can still be dragged once pitched.
+          void ipc
+            .renderPitched(sample.id, slot.semitones)
+            .then((playable) => {
+              const result = dragOut([playable.path], null);
+              if (!result.started && result.error !== undefined) {
+                useKit.setState({ error: result.error });
+              }
+            })
+            .catch((err: unknown) => {
+              useKit.setState({ error: ipc.errorText(err) });
+            });
         }}
         title={
           sample === null
             ? `Empty — press ${SLOT_KEYS[index]} with a sample selected`
-            : (blocked ?? sample.relPath)
+            : slot.semitones !== 0
+              ? `${sample.relPath} at ${formatSemitones(slot.semitones)} st`
+              : (blocked ?? sample.relPath)
         }
       >
         {sample === null ? (
@@ -211,8 +265,10 @@ function Pad({ index, slot }: { index: number; slot: Slot }): React.JSX.Element 
       {sample !== null && (
         <div className="pad-foot">
           {missing && <span className="bad">missing</span>}
-          {!missing && blocked !== null && <span className="bad" title={blocked}>can't drag</span>}
-          {!missing && blocked === null && (
+          {!missing && blocked !== null && slot.semitones === 0 && (
+            <span className="bad" title={blocked}>can't drag</span>
+          )}
+          {!missing && (blocked === null || slot.semitones !== 0) && (
             <label className="pad-gain" title="Per-slot gain offset — metadata until export">
               <input
                 type="range"
@@ -232,6 +288,27 @@ function Pad({ index, slot }: { index: number; slot: Slot }): React.JSX.Element 
       )}
     </div>
   );
+}
+
+/** `+3` / `-12`, the way a musician writes a transposition. */
+export function formatSemitones(semitones: number): string {
+  return `${semitones > 0 ? "+" : ""}${semitones}`;
+}
+
+const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+
+/**
+ * The pad's note, taking the untransposed sample as C.
+ *
+ * Relative, not absolute: nothing here knows what pitch the source file
+ * actually is, and claiming a real note name would be a guess dressed up as a
+ * fact. C is "the sample as recorded", so C2 is an octave below it. Intervals
+ * are what you play from anyway.
+ */
+export function noteName(semitones: number): string {
+  const index = ((Math.round(semitones) % 12) + 12) % 12;
+  const octave = 3 + Math.floor(Math.round(semitones) / 12);
+  return `${NOTE_NAMES[index] ?? "?"}${octave}`;
 }
 
 /** Adds the library's current selection to a slot. Used by the keyboard layer. */

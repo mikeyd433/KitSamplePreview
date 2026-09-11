@@ -61,8 +61,16 @@ export function useGlobalKeyboard(searchRef: React.RefObject<HTMLInputElement | 
       if (!e.ctrlKey && !e.altKey && !e.metaKey) {
         const slot = SLOT_KEYS.indexOf(e.key.toLowerCase());
         if (slot !== -1) {
-          const row = store.rows[store.selectedIndex];
-          if (row !== undefined) useKit.getState().assign(slot, row);
+          const kit = useKit.getState();
+          if (kit.padMode === "play") {
+            // Playing the tray, not building it: the sixteen keys are the
+            // instrument a chromatic spread turns them into.
+            void unlock();
+            kit.selectSlot(slot);
+          } else {
+            const row = store.rows[store.selectedIndex];
+            if (row !== undefined) kit.assign(slot, row);
+          }
           e.preventDefault();
           return;
         }

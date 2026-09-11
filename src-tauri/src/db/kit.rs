@@ -30,6 +30,10 @@ pub struct KitSlot {
     pub slot_index: i64,
     pub sample_id: Option<i64>,
     pub gain_db_offset: f64,
+    /// Chromatic-spread offset. Defaults to 0 via serde, so a frontend or a
+    /// saved kit that predates the field round-trips as the original pitch.
+    #[serde(default)]
+    pub semitones: f64,
     pub notes: Option<String>,
 }
 
@@ -104,13 +108,24 @@ pub fn save_kit(conn: &mut Connection, name: &str, slots: &[KitSlot]) -> Result<
     for slot in slots {
         // Empty slots are not stored: absence is the natural representation of
         // an empty pad, and it keeps a fresh kit from writing sixteen null rows.
-        if slot.sample_id.is_none() && slot.gain_db_offset == 0.0 && slot.notes.is_none() {
+        if slot.sample_id.is_none()
+            && slot.gain_db_offset == 0.0
+            && slot.semitones == 0.0
+            && slot.notes.is_none()
+        {
             continue;
         }
         tx.execute(
-            "INSERT INTO kit_slot (kit_id, slot_index, sample_id, gain_db_offset, notes)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![kit_id, slot.slot_index, slot.sample_id, slot.gain_db_offset, slot.notes],
+            "INSERT INTO kit_slot (kit_id, slot_index, sample_id, gain_db_offset, semitones, notes)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                kit_id,
+                slot.slot_index,
+                slot.sample_id,
+                slot.gain_db_offset,
+                slot.semitones,
+                slot.notes
+            ],
         )?;
     }
 
@@ -130,13 +145,20 @@ pub fn load_kit(conn: &Connection, kit_id: i64) -> Result<Option<KitDetail>, DbE
 
     let mut slots: Vec<KitSlotDetail> = (0..SLOT_COUNT as i64)
         .map(|slot_index| KitSlotDetail {
-            slot: KitSlot { slot_index, sample_id: None, gain_db_offset: 0.0, notes: None },
+            slot: KitSlot {
+                slot_index,
+                sample_id: None,
+                gain_db_offset: 0.0,
+                semitones: 0.0,
+                notes: None,
+            },
             sample: None,
         })
         .collect();
 
     let mut stmt = conn.prepare(
-        "SELECT slot_index, sample_id, gain_db_offset, notes FROM kit_slot WHERE kit_id = ?1",
+        "SELECT slot_index, sample_id, gain_db_offset, semitones, notes
+           FROM kit_slot WHERE kit_id = ?1",
     )?;
     let stored = stmt
         .query_map(params![id], |row| {
@@ -144,7 +166,8 @@ pub fn load_kit(conn: &Connection, kit_id: i64) -> Result<Option<KitDetail>, DbE
                 slot_index: row.get(0)?,
                 sample_id: row.get(1)?,
                 gain_db_offset: row.get(2)?,
-                notes: row.get(3)?,
+                semitones: row.get(3)?,
+                notes: row.get(4)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -179,7 +202,7 @@ mod tests {
     use crate::db;
 
     fn slot(index: i64, sample_id: Option<i64>) -> KitSlot {
-        KitSlot { slot_index: index, sample_id, gain_db_offset: 0.0, notes: None }
+        KitSlot { slot_index: index, sample_id, gain_db_offset: 0.0, semitones: 0.0, notes: None }
     }
 
     #[test]
@@ -260,4 +283,56 @@ mod tests {
         assert!(sample.removed);
         assert_eq!(sample.path, r"C:\S\gone.wav");
     }
+
+    /// A chromatic spread is only worth building if it survives being saved.
+    /// The pitch is the whole content of such a kit -- sixteen references to
+    /// one sample tell you nothing without it.
+    #[test]
+    fn a_pitched_slot_keeps_its_semitones() {
+        let mut conn = db::open_in_memory().unwrap();
+        let slots: Vec<KitSlot> = (0..SLOT_COUNT as i64)
+            .map(|i| KitSlot {
+                slot_index: i,
+                sample_id: None,
+                gain_db_offset: 0.0,
+                semitones: (i - 12) as f64,
+                notes: None,
+            })
+            .collect();
+        let id = save_kit(&mut conn, "Chromatic 808", &slots).unwrap();
+
+        let loaded = load_kit(&conn, id).unwrap().expect("kit missing");
+        for (i, entry) in loaded.slots.iter().enumerate() {
+            assert_eq!(
+                entry.slot.semitones,
+                (i as i64 - 12) as f64,
+                "slot {i} lost its pitch"
+            );
+        }
+    }
+
+    /// The empty-slot shortcut skips rows carrying nothing. A pitch is
+    /// something, so a pad tuned but not yet filled has to survive it --
+    /// otherwise setting up a spread before choosing the sample silently
+    /// discards the setup.
+    #[test]
+    fn a_pitch_alone_is_enough_to_store_a_slot() {
+        let mut conn = db::open_in_memory().unwrap();
+        let id = save_kit(
+            &mut conn,
+            "Tuned but empty",
+            &[KitSlot {
+                slot_index: 4,
+                sample_id: None,
+                gain_db_offset: 0.0,
+                semitones: 7.0,
+                notes: None,
+            }],
+        )
+        .unwrap();
+
+        let loaded = load_kit(&conn, id).unwrap().expect("kit missing");
+        assert_eq!(loaded.slots[4].slot.semitones, 7.0);
+    }
+
 }

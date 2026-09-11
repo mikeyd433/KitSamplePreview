@@ -79,6 +79,10 @@ CREATE TABLE IF NOT EXISTS kit_slot (
   -- Slots reference samples by id; nothing is copied until export (SPEC §4).
   sample_id      INTEGER REFERENCES sample(id) ON DELETE SET NULL,
   gain_db_offset REAL NOT NULL DEFAULT 0,
+  -- Semitone offset for the chromatic spread. The pad still references one
+  -- sample; the shifted file is rendered into the app's cache on the way out,
+  -- never written beside the source (SPEC §2).
+  semitones      REAL NOT NULL DEFAULT 0,
   notes          TEXT,
   PRIMARY KEY (kit_id, slot_index)
 );

@@ -146,6 +146,7 @@ pub fn export_kit(
     dest_dir: &str,
     opts: &ExportOptions,
     sidecar_override: Option<&str>,
+    pitch_cache: &Path,
 ) -> Result<ExportReport, ExportError> {
     let kit = db::load_kit(conn, kit_id)
         .map_err(|e| ExportError::Io(e.to_string()))?
@@ -176,11 +177,48 @@ pub fn export_kit(
             continue;
         }
 
-        let stem = sanitize(sample.filename.trim_end_matches(&format!(".{}", sample.ext)));
-        let ext = if opts.is_passthrough() { sample.ext.clone() } else { "wav".to_string() };
+        // A pitched pad exports the render, not the original. Done before the
+        // passthrough decision because the render is already a WAV, so what
+        // would otherwise be a byte copy of an AIFF is a copy of the shifted
+        // WAV instead.
+        let pitched = if crate::pitch::is_unity(entry.slot.semitones) {
+            None
+        } else {
+            match crate::pitch::render(
+                &paths::for_file_io(&sample.path),
+                entry.slot.semitones,
+                pitch_cache,
+            ) {
+                Ok(path) => Some(path),
+                Err(e) => {
+                    skipped.push(SkippedSlot {
+                        slot_index: index,
+                        reason: format!("could not render the pitch shift: {e}"),
+                    });
+                    continue;
+                }
+            }
+        };
+
+        let base = sanitize(sample.filename.trim_end_matches(&format!(".{}", sample.ext)));
+        // The offset goes in the name. Sixteen copies of one 808 are otherwise
+        // told apart only by their slot number, and the pitch is the thing you
+        // are looking for when you come back to the folder.
+        let stem = match &pitched {
+            None => base,
+            Some(_) => format!(
+                "{base} {}st",
+                sanitize(&crate::pitch::semitone_suffix(entry.slot.semitones))
+            ),
+        };
+        let source_ext = if pitched.is_some() { "wav" } else { &sample.ext };
+        let ext = if opts.is_passthrough() { source_ext.to_string() } else { "wav".to_string() };
         let out = dest.join(format!("{:02}_{stem}.{ext}", index + 1));
 
-        let source = paths::for_file_io(&sample.path);
+        let source = match &pitched {
+            Some(path) => path.clone(),
+            None => paths::for_file_io(&sample.path),
+        };
         let result = if opts.is_passthrough() {
             std::fs::copy(&source, &out)
                 .map(|_| false)
@@ -315,7 +353,8 @@ mod tests {
             body_rms_db: Some(body), peaks: None, drag_blocked: None,
             removed: false, probe_error: None,
         };
-        let slot = db::KitSlot { slot_index: 0, sample_id: Some(1), gain_db_offset: 3.0, notes: None };
+        let slot =
+            db::KitSlot { slot_index: 0, sample_id: Some(1), gain_db_offset: 3.0, semitones: 0.0, notes: None };
         let opts = ExportOptions {
             apply_slot_gain: true,
             normalize: true,
@@ -343,7 +382,8 @@ mod tests {
             body_rms_db: Some(-30.0), peaks: None, drag_blocked: None,
             removed: false, probe_error: None,
         };
-        let slot = db::KitSlot { slot_index: 0, sample_id: Some(1), gain_db_offset: 6.0, notes: None };
+        let slot =
+            db::KitSlot { slot_index: 0, sample_id: Some(1), gain_db_offset: 6.0, semitones: 0.0, notes: None };
         // §7.8 defaults both off: an export is a copy unless asked otherwise.
         assert_eq!(export_gain_db(&sample, &slot, &ExportOptions::default()), 0.0);
     }

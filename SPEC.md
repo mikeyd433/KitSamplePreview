@@ -259,6 +259,14 @@ Auto-preview-on-selection is the single most important behavior in the app. Hold
 
 Preview always plays from the file's true start. No fade-in.
 
+### 7.x Chromatic spread (added in build)
+
+Not in the original spec. One sample across all sixteen pads, pitched, so Sitala — which has no per-pad tuning — can play a bassline off a single 808. `root` shifts the whole range, `step` sets the interval between pads.
+
+Varispeed, not time-invariant pitch shifting: up is shorter, down is longer, the way a hardware sampler works and the way a tuned 808 is made. A phase vocoder would smear exactly the transients a drum library is made of.
+
+Preview shifts with `playbackRate` and costs nothing. A pitch only becomes a file when it has to leave the app — a drag or an export — rendered into the app's own cache directory, never beside the source (§2).
+
 ### 7.3 Search and filtering
 
 - Text search over the normalized `search_text` column (§4), AND-ing one `LIKE` clause per whitespace-separated term, so `808 kick` matches `Vinyl_808s/KICK_808_deep_02.wav` in any term order

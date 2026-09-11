@@ -21,7 +21,7 @@ pub enum DbError {
 /// Bumped whenever `schema.sql` changes shape. Phase 1 ships version 1; the
 /// FTS5 table SPEC §4 defers is an additive migration to version 2 that needs
 /// no re-scan, because `search_text` is already populated.
-const SCHEMA_VERSION: i64 = 2;
+const SCHEMA_VERSION: i64 = 3;
 
 pub fn open(path: &Path) -> Result<Connection, DbError> {
     if let Some(parent) = path.parent() {
@@ -66,6 +66,12 @@ fn migrate(conn: &Connection) -> Result<(), DbError> {
             "ALTER TABLE sample ADD COLUMN category_user_set INTEGER NOT NULL DEFAULT 0",
         )?;
         current = 2;
+    }
+    if current < 3 {
+        // Defaults to 0, so every kit saved before the chromatic spread
+        // reopens at the pitch it was built at.
+        conn.execute_batch("ALTER TABLE kit_slot ADD COLUMN semitones REAL NOT NULL DEFAULT 0")?;
+        current = 3;
     }
 
     conn.pragma_update(None, "user_version", current)?;

@@ -13,6 +13,7 @@ use tauri::{AppHandle, Manager, State};
 use crate::convert;
 use crate::db;
 use crate::paths;
+use crate::pitch;
 use crate::scan;
 
 pub struct AppState {
@@ -223,6 +224,49 @@ pub fn resolve_playable(state: State<'_, AppState>, id: i64) -> CmdResult<Playab
     })
 }
 
+/// Renders a sample at a semitone offset and returns the file.
+///
+/// Needed because a pitch that exists only as a playback rate cannot be dragged
+/// anywhere: Sitala is handed a path, so a pitched pad has to become a real
+/// file before it leaves the app. Cached under the app's data directory, so
+/// dragging the same pad twice renders once -- and never beside the user's
+/// samples, which SPEC §2 keeps read-only.
+///
+/// At unity it returns the source untouched rather than rendering a copy: pad 1
+/// of a chromatic spread is the original sample and should drag as itself.
+#[tauri::command]
+pub fn render_pitched(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: i64,
+    semitones: f64,
+) -> CmdResult<Playable> {
+    let source = {
+        let conn = state.db.lock().map_err(to_msg)?;
+        let row = db::get_sample(&conn, id).map_err(to_msg)?.ok_or("no such sample")?;
+        if row.removed {
+            return Err(format!("file is missing: {}", row.path));
+        }
+        row.path
+    };
+    let source = paths::for_file_io(&source);
+
+    if pitch::is_unity(semitones) {
+        return Ok(Playable {
+            path: source.to_string_lossy().into_owned(),
+            transcoded: false,
+        });
+    }
+
+    let cache = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| format!("no cache directory: {e}"))?
+        .join("pitched");
+    let out = pitch::render(&source, semitones, &cache)?;
+    Ok(Playable { path: out.to_string_lossy().into_owned(), transcoded: true })
+}
+
 // ---------------------------------------------------------------------------
 // Tags and settings
 // ---------------------------------------------------------------------------
@@ -357,14 +401,20 @@ pub fn delete_kit(state: State<'_, AppState>, id: i64) -> CmdResult<()> {
 
 #[tauri::command]
 pub fn export_kit(
+    app: AppHandle,
     state: State<'_, AppState>,
     kit_id: i64,
     dest_dir: String,
     options: convert::ExportOptions,
 ) -> CmdResult<convert::ExportReport> {
+    let cache = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| format!("no cache directory: {e}"))?
+        .join("pitched");
     let conn = state.db.lock().map_err(to_msg)?;
     let override_path = db::get_setting(&conn, "export.ffmpegPath").map_err(to_msg)?;
-    convert::export_kit(&conn, kit_id, &dest_dir, &options, override_path.as_deref())
+    convert::export_kit(&conn, kit_id, &dest_dir, &options, override_path.as_deref(), &cache)
         .map_err(to_msg)
 }
 

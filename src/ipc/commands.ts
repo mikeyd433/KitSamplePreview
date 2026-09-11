@@ -138,6 +138,16 @@ export const folderTree = (rootId: number | null): Promise<FolderNode[]> =>
 export const resolvePlayable = (id: number): Promise<Playable> =>
   invoke<Playable>("resolve_playable", { id });
 
+/**
+ * Renders a sample at a semitone offset and returns the file on disk.
+ *
+ * Needed only when a pitch has to leave the app -- a drag or an export. Preview
+ * never calls this: it shifts with `playbackRate`, which costs nothing.
+ * At unity this hands back the source untouched rather than rendering a copy.
+ */
+export const renderPitched = (id: number, semitones: number): Promise<Playable> =>
+  invoke<Playable>("render_pitched", { id, semitones });
+
 export const setTags = (sampleId: number, tags: string[]): Promise<void> =>
   invoke<void>("set_tags", { sampleId, tags });
 
@@ -155,6 +165,8 @@ export interface KitSlot {
   slotIndex: number;
   sampleId: number | null;
   gainDbOffset: number;
+  /** Varispeed offset for the chromatic spread. Absent in kits saved before it. */
+  semitones?: number;
   notes: string | null;
 }
 
