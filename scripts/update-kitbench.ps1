@@ -1,0 +1,213 @@
+﻿<#
+.SYNOPSIS
+  Pulls the latest Kitbench, builds it, and puts a shortcut on the Desktop.
+
+.DESCRIPTION
+  Run this when you want the newest version. It is deliberately separate from
+  launching: a release build takes minutes, and an icon that rebuilt on every
+  double-click would be unusable. The Desktop shortcut points at the built
+  executable, so launching afterwards is instant.
+
+  After it finishes, check the version badge in the app's status bar -- it shows
+  the commit the running binary was built from, which is the only reliable way
+  to tell a fresh build from a stale one.
+
+.PARAMETER NoPull
+  Build what is already checked out, without fetching.
+
+.PARAMETER Relaunch
+  Start Kitbench when the build succeeds, and keep this window open if it
+  fails. Used by the app's own "update" button, which has to quit before the
+  build can replace its executable.
+
+.EXAMPLE
+  .\scripts\update-kitbench.ps1
+#>
+[CmdletBinding()]
+param(
+    [switch] $NoPull,
+    [switch] $Relaunch
+)
+
+$ErrorActionPreference = 'Stop'
+
+# Launched from the app's update button, this window is the only place an error
+# can be read -- so it must not vanish on failure.
+trap {
+    Write-Host ''
+    Write-Host "Update failed: $_" -ForegroundColor Red
+    Write-Host 'Kitbench has not been changed; the Desktop icon still runs the previous build.'
+    if ($Relaunch) { Read-Host 'Press Enter to close' }
+    exit 1
+}
+
+# Resolve the repo from this script's own location, so the shortcut works no
+# matter where it is invoked from.
+$repo = Split-Path -Parent $PSScriptRoot
+Set-Location $repo
+Write-Host "Kitbench in $repo" -ForegroundColor Cyan
+
+function Require-Tool([string] $name, [string] $hint) {
+    if (-not (Get-Command $name -ErrorAction SilentlyContinue)) {
+        throw "$name is not on PATH. $hint"
+    }
+}
+
+Require-Tool git   'Install Git for Windows.'
+Require-Tool node  'Install Node 20.19 or newer.'
+Require-Tool npm   'Install Node 20.19 or newer.'
+Require-Tool cargo 'Install Rust from https://rustup.rs (MSVC toolchain).'
+
+if (-not $NoPull) {
+    # A dirty tree stops `git pull --ff-only` dead. This used to be a hard stop
+    # here, on the reasoning that carrying on would rebuild the same commit and
+    # report success. That was right about the danger and wrong about the
+    # remedy: something in this repo dirties src-tauri/Cargo.toml on its own,
+    # so the stop fired on every run and the app's update button could never
+    # succeed -- it has no way to run `git checkout -- .` first.
+    #
+    # So: set the changes aside instead of refusing. A stash is recoverable,
+    # which `git checkout -- .` is not, and it needs nothing from the user.
+    $dirty = git status --porcelain
+    if ($dirty) {
+        Write-Host ''
+        Write-Host 'These files differ from the last commit:' -ForegroundColor Yellow
+        Write-Host ($dirty -join [Environment]::NewLine) -ForegroundColor Yellow
+        Write-Host 'Setting them aside so the pull can run.' -ForegroundColor Yellow
+        git stash push --quiet --message "kitbench updater $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+        if ($LASTEXITCODE -ne 0) {
+            throw ('Could not set local changes aside (git stash failed). ' +
+                   'Nothing has changed. Pass -NoPull to rebuild the current code.')
+        }
+        Write-Host 'Stashed -- `git stash list` shows it, `git stash pop` brings it back.' -ForegroundColor Yellow
+        Write-Host ''
+    }
+
+    Write-Host 'Pulling...' -ForegroundColor Cyan
+    git pull --ff-only
+    # git does not fail a PowerShell script by itself, and a pull that failed
+    # silently is how this script twice rebuilt stale code and called it an
+    # update.
+    if ($LASTEXITCODE -ne 0) {
+        throw ('The pull failed (exit code ' + $LASTEXITCODE + '). Nothing has changed. ' +
+               'If it mentions untracked files, move or delete the files it names.')
+    }
+}
+
+# Whatever the tree looks like from here is the build's doing, not yours. See
+# the check at the end, which is what finally answers "why does Cargo.toml keep
+# coming back modified?".
+$treeBeforeBuild = git status --porcelain
+
+# Windows will not let a running executable be replaced, and the build fails
+# with a bare "Access is denied" that says nothing about why.
+function Wait-ForKitbenchToExit([int] $Seconds = 10) {
+    $deadline = (Get-Date).AddSeconds($Seconds)
+    while ((Get-Process -Name 'kitbench' -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) {
+        Start-Sleep -Milliseconds 250
+    }
+    return -not (Get-Process -Name 'kitbench' -ErrorAction SilentlyContinue)
+}
+
+if ($Relaunch) {
+    # The app spawned this and is on its way out; give it a moment.
+    [void] (Wait-ForKitbenchToExit 10)
+}
+
+if (Get-Process -Name 'kitbench' -ErrorAction SilentlyContinue) {
+    Write-Host ''
+    Write-Warning 'Kitbench is running, and Windows will not replace a running program.'
+    $answer = Read-Host 'Close it and continue? [Y/n]'
+    if ($answer -and $answer -notmatch '^[Yy]') {
+        throw 'Close Kitbench and run this again.'
+    }
+    Stop-Process -Name 'kitbench' -Force -ErrorAction SilentlyContinue
+    if (-not (Wait-ForKitbenchToExit 10)) {
+        throw 'Kitbench would not close. Close it by hand and run this again.'
+    }
+    Write-Host 'Closed.' -ForegroundColor Cyan
+}
+
+# `npm ci` rather than `npm install`: install can rewrite package-lock.json,
+# which leaves the tree dirty, which makes the next run skip its pull and
+# rebuild stale code without saying anything much. ci installs exactly the lock
+# file and never modifies it.
+Write-Host 'Installing frontend dependencies...' -ForegroundColor Cyan
+npm ci --no-audit --no-fund
+if ($LASTEXITCODE -ne 0) {
+    Write-Warning 'npm ci failed (lock file out of step with package.json?); falling back to npm install.'
+    npm install --no-audit --no-fund
+    if ($LASTEXITCODE -ne 0) { throw 'Installing dependencies failed.' }
+}
+
+# --no-bundle: we point the shortcut at the executable, so building the NSIS
+# installer would only add a tooling download and another way to fail.
+Write-Host 'Building (several minutes the first time, much less after)...' -ForegroundColor Cyan
+$buildStarted = Get-Date
+npm run tauri -- build --no-bundle
+if ($LASTEXITCODE -ne 0) {
+    throw "The build failed (exit code $LASTEXITCODE). The error is above; nothing has changed."
+}
+
+$exe = Join-Path $repo 'src-tauri\target\release\kitbench.exe'
+if (-not (Test-Path $exe)) {
+    throw "Build reported success but $exe is missing."
+}
+
+# Existence is not enough: a failed build leaves the PREVIOUS executable sitting
+# there, which is exactly how this script once announced a successful update
+# over a build that had failed.
+$builtFile = Get-Item $exe
+if ($builtFile.LastWriteTime -lt $buildStarted) {
+    throw ("The build did not produce a new executable -- $exe was last written " +
+           "$($builtFile.LastWriteTime), before this build started. Nothing has changed.")
+}
+
+# Point the shortcut at the built executable rather than the installer: it
+# needs no install step and never meets SmartScreen.
+$desktop  = [Environment]::GetFolderPath('Desktop')
+$linkPath = Join-Path $desktop 'Kitbench.lnk'
+
+$shell    = New-Object -ComObject WScript.Shell
+$shortcut = $shell.CreateShortcut($linkPath)
+$shortcut.TargetPath       = $exe
+$shortcut.WorkingDirectory = Split-Path -Parent $exe
+$shortcut.IconLocation     = "$exe,0"
+$shortcut.Description      = 'Kitbench -- drum sample auditioner'
+$shortcut.Save()
+
+$commit = (git rev-parse --short=7 HEAD).Trim()
+$changes = git status --porcelain
+$dirtyNow = if ($changes) { '+' } else { '' }
+Write-Host ''
+Write-Host "Built $commit$dirtyNow" -ForegroundColor Green
+Write-Host 'The version badge in the status bar should show the same thing.' -ForegroundColor Green
+
+if ($changes) {
+    # Name them, and say who did it. The tree was recorded just after the pull;
+    # anything dirty now that was clean then was written by the build itself,
+    # which is the answer to why src-tauri/Cargo.toml keeps coming back
+    # modified. The next run stashes it either way, so this is a diagnosis
+    # rather than a chore.
+    Write-Host ''
+    Write-Warning 'The "+" means these files differ from the last commit:'
+    Write-Host ($changes -join [Environment]::NewLine) -ForegroundColor Yellow
+
+    $before = @($treeBeforeBuild)
+    $newlyDirty = @($changes) | Where-Object { $before -notcontains $_ }
+    if ($newlyDirty) {
+        Write-Host ''
+        Write-Host 'The build wrote these -- they were not modified before it ran:' -ForegroundColor Yellow
+        Write-Host ($newlyDirty -join [Environment]::NewLine) -ForegroundColor Yellow
+        Write-Host 'That is a tool rewriting the repo, not anything you did.' -ForegroundColor Yellow
+    }
+
+    Write-Host ''
+    Write-Host 'Nothing to do about it: the next update sets them aside automatically.' -ForegroundColor Yellow
+}
+Write-Host "Shortcut: $linkPath" -ForegroundColor Green
+
+if ($Relaunch) {
+    Write-Host 'Starting Kitbench...' -ForegroundColor Cyan
+    Start-Process -FilePath $exe -WorkingDirectory (Split-Path -Parent $exe)
+}
